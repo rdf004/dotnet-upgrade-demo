@@ -17,27 +17,21 @@ namespace ContosoCommerce.Users.Repositories
             _db = context;
         }
 
-        public User FindByEmail(string email)
+        public async Task<User>
+            FindByEmailAsync(string email)
         {
-            return _db.Users
-                .FromSqlRaw(
-                    "SELECT * FROM Users"
-                    + " WHERE Email = {0}"
-                    + " AND IsActive = 1",
-                    email)
-                .AsEnumerable()
-                .FirstOrDefault();
+            return await _db.Users
+                .FirstOrDefaultAsync(u =>
+                    u.Email == email
+                    && u.IsActive);
         }
 
-        public User FindById(int id)
+        public async Task<User>
+            FindByIdAsync(int id)
         {
-            return _db.Users
-                .FromSqlRaw(
-                    "SELECT * FROM Users"
-                    + " WHERE Id = {0}",
-                    id)
-                .AsEnumerable()
-                .FirstOrDefault();
+            return await _db.Users
+                .FirstOrDefaultAsync(
+                    u => u.Id == id);
         }
 
         public async Task<List<User>>

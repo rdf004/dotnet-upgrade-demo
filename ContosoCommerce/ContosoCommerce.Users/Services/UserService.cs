@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
-using System.Text;
 using System.Threading.Tasks;
 using ContosoCommerce.Core.Enums;
 using ContosoCommerce.Core.Exceptions;
@@ -10,38 +9,42 @@ using ContosoCommerce.Core.Interfaces;
 using ContosoCommerce.Data;
 using ContosoCommerce.Data.Entities;
 using ContosoCommerce.Users.Repositories;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Users.Services
 {
     public class UserService : IUserService
     {
-        private readonly ILogger<UserService>
-            _log;
-        private readonly UserRepository _repo;
+        private readonly
+            ILogger<UserService> _log;
+        private readonly
+            UserRepository _repo;
         private readonly IAuditService _audit;
-        private readonly CommerceDbContext _db;
+        private readonly
+            PasswordHasher<User> _hasher;
 
         public UserService(
-            CommerceDbContext context,
+            UserRepository repo,
             IAuditService auditService,
             ILogger<UserService> logger)
         {
-            _db = context;
-            _repo =
-                new UserRepository(context);
+            _repo = repo;
             _audit = auditService;
             _log = logger;
+            _hasher =
+                new PasswordHasher<User>();
         }
 
         public async Task<UserDto>
             GetUserAsync(int userId)
         {
             _log.LogDebug(
-                "Getting user {Id}", userId);
+                "Getting user {Id}",
+                userId);
 
-            var user =
-                _repo.FindById(userId);
+            var user = await _repo
+                .FindByIdAsync(userId);
             if (user == null)
             {
                 throw
@@ -70,8 +73,9 @@ namespace ContosoCommerce.Users.Services
                 "Creating user: {Email}",
                 request.Email);
 
-            var existing = _repo
-                .FindByEmail(request.Email);
+            var existing = await _repo
+                .FindByEmailAsync(
+                    request.Email);
             if (existing != null)
             {
                 throw
@@ -85,9 +89,6 @@ namespace ContosoCommerce.Users.Services
             var user = new User
             {
                 Email = request.Email,
-                PasswordHash =
-                    HashPassword(
-                        request.Password),
                 FirstName =
                     request.FirstName,
                 LastName =
@@ -96,6 +97,9 @@ namespace ContosoCommerce.Users.Services
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
+            user.PasswordHash =
+                _hasher.HashPassword(
+                    user, request.Password);
 
             await _repo.AddAsync(user);
 
@@ -118,8 +122,8 @@ namespace ContosoCommerce.Users.Services
                 "Updating user {Id}",
                 userId);
 
-            var user =
-                _repo.FindById(userId);
+            var user = await _repo
+                .FindByIdAsync(userId);
             if (user == null)
             {
                 throw
@@ -171,8 +175,8 @@ namespace ContosoCommerce.Users.Services
                 "Deleting user {Id}",
                 userId);
 
-            var user =
-                _repo.FindById(userId);
+            var user = await _repo
+                .FindByIdAsync(userId);
             if (user == null)
             {
                 throw
@@ -201,8 +205,8 @@ namespace ContosoCommerce.Users.Services
                 "Auth attempt for {Email}",
                 email);
 
-            var user =
-                _repo.FindByEmail(email);
+            var user = await _repo
+                .FindByEmailAsync(email);
             if (user == null)
             {
                 return new AuthResult
@@ -213,12 +217,17 @@ namespace ContosoCommerce.Users.Services
                 };
             }
 
-            if (!VerifyPassword(
-                password,
-                user.PasswordHash))
+            var result =
+                _hasher.VerifyHashedPassword(
+                    user,
+                    user.PasswordHash,
+                    password);
+            if (result
+                == PasswordVerificationResult
+                    .Failed)
             {
                 _log.LogWarning(
-                    "Failed login for {Email}",
+                    "Failed login: {Email}",
                     email);
                 return new AuthResult
                 {
@@ -228,10 +237,11 @@ namespace ContosoCommerce.Users.Services
                 };
             }
 
-            var token = Guid.NewGuid()
-                .ToString("N")
-                + Guid.NewGuid()
-                    .ToString("N");
+            var tokenBytes =
+                RandomNumberGenerator
+                    .GetBytes(32);
+            var token = Convert
+                .ToBase64String(tokenBytes);
 
             var authToken = new AuthToken
             {
@@ -274,11 +284,12 @@ namespace ContosoCommerce.Users.Services
             return authToken.UserId;
         }
 
-        public async Task<bool> HasRoleAsync(
-            int userId, UserRole role)
+        public async Task<bool>
+            HasRoleAsync(
+                int userId, UserRole role)
         {
-            var user =
-                _repo.FindById(userId);
+            var user = await _repo
+                .FindByIdAsync(userId);
             if (user == null) return false;
             return user.Role == role
                 || user.Role
@@ -289,27 +300,6 @@ namespace ContosoCommerce.Users.Services
             GetUserCountAsync()
         {
             return await _repo.CountAsync();
-        }
-
-        internal static string HashPassword(
-            string password)
-        {
-            using var sha = SHA256.Create();
-            var bytes = sha.ComputeHash(
-                Encoding.UTF8.GetBytes(
-                    password));
-            return Convert
-                .ToHexString(bytes);
-        }
-
-        internal static bool VerifyPassword(
-            string password, string stored)
-        {
-            var hash = HashPassword(password);
-            return string.Equals(
-                hash, stored,
-                StringComparison
-                    .OrdinalIgnoreCase);
         }
 
         private static UserDto MapToDto(

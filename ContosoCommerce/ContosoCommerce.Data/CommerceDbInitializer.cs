@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Security.Cryptography;
-using System.Text;
 using ContosoCommerce.Core.Enums;
 using ContosoCommerce.Data.Entities;
+using Microsoft.AspNetCore.Identity;
 
 namespace ContosoCommerce.Data
 {
@@ -22,8 +21,12 @@ namespace ContosoCommerce.Data
         private static void SeedUsers(
             CommerceDbContext context)
         {
-            var hash =
-                HashPassword("P@ssw0rd!");
+            var hasher =
+                new PasswordHasher<User>();
+            var tmp = new User();
+            var hash = hasher
+                .HashPassword(
+                    tmp, "P@ssw0rd!");
 
             var users = new List<User>
             {
@@ -268,14 +271,6 @@ namespace ContosoCommerce.Data
                 });
         }
 
-        private static string HashPassword(
-            string password)
-        {
-            using var sha = SHA256.Create();
-            var bytes = sha.ComputeHash(
-                Encoding.UTF8.GetBytes(
-                    password));
-            return Convert.ToHexString(bytes);
-        }
+
     }
 }
