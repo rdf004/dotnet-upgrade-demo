@@ -1,0 +1,17 @@
+## .NET Framework
+bin/
+obj/
+packages/
+*.user
+*.suo
+*.cache
+*.dll
+*.pdb
+*.exe
+*.log
+.vs/
+_ReSharper*/
+TestResults/
+*.ncrunch*
+*.DotSettings.user
+App_Data/
