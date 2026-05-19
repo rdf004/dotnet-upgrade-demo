@@ -364,8 +364,28 @@ namespace ContosoCommerce.Reporting.Services
             Task<DashboardSummaryDto>
             GetDashboardSummaryAsync()
         {
-            return
-                new DashboardSummaryDto();
+            var users = await _db.Users
+                .CountAsync(u => u.IsActive);
+            var products = await _db.Products
+                .CountAsync(p => p.IsActive);
+            var orders = await _db.Orders
+                .CountAsync();
+            var revenue = await _db.Orders
+                .Where(o =>
+                    o.Status
+                    != Core.Enums
+                        .OrderStatus.Cancelled
+                    && o.Status
+                    != Core.Enums
+                        .OrderStatus.Refunded)
+                .SumAsync(o => o.TotalAmount);
+            return new DashboardSummaryDto
+            {
+                TotalUsers = users,
+                TotalProducts = products,
+                TotalOrders = orders,
+                TotalRevenue = revenue
+            };
         }
 
         private static string

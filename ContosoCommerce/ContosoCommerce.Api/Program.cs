@@ -10,6 +10,7 @@ using ContosoCommerce.Users.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using STJ = System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,9 +27,15 @@ builder.Services.AddControllers(opts =>
     .AddJsonOptions(opts =>
     {
         opts.JsonSerializerOptions
-            .PropertyNamingPolicy = null;
+            .PropertyNamingPolicy =
+            STJ.JsonNamingPolicy
+                .CamelCase;
         opts.JsonSerializerOptions
             .WriteIndented = true;
+        opts.JsonSerializerOptions
+            .Converters.Add(
+            new STJ.Serialization
+                .JsonStringEnumConverter());
     });
 
 var connStr = builder.Configuration
