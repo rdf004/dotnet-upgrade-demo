@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Transactions;
 using ContosoCommerce.Core.Enums;
 using ContosoCommerce.Core.Exceptions;
 using ContosoCommerce.Core.Interfaces;
@@ -108,10 +107,10 @@ namespace ContosoCommerce.Orders.Services
                 .GetUserAsync(
                     request.UserId);
 
-            using (var scope =
-                new TransactionScope(
-                    TransactionScopeAsyncFlowOption
-                        .Enabled))
+            await using var txn = await _db
+                .Database
+                .BeginTransactionAsync();
+            try
             {
                 var order = new Order
                 {
@@ -179,7 +178,7 @@ namespace ContosoCommerce.Orders.Services
 
                 order.TotalAmount = total;
                 await _db.SaveChangesAsync();
-                scope.Complete();
+                await txn.CommitAsync();
 
                 await _audit.LogAsync(
                     "Order", order.Id,
@@ -191,6 +190,11 @@ namespace ContosoCommerce.Orders.Services
 
                 return await GetOrderAsync(
                     order.Id);
+            }
+            catch
+            {
+                await txn.RollbackAsync();
+                throw;
             }
         }
 
@@ -261,9 +265,8 @@ namespace ContosoCommerce.Orders.Services
             }
 
             var result =
-                await Task.Run(
-                    () => SimulatePayment(
-                        request, order));
+                await SimulatePaymentAsync(
+                    request, order);
 
             var payment = new Payment
             {
@@ -319,13 +322,13 @@ namespace ContosoCommerce.Orders.Services
                     o => o.TotalAmount);
         }
 
-        private PaymentResultDto
-            SimulatePayment(
+        private async
+            Task<PaymentResultDto>
+            SimulatePaymentAsync(
                 PaymentRequest request,
                 Order order)
         {
-            System.Threading.Thread
-                .Sleep(500);
+            await Task.Delay(500);
 
             var txnId = string.Format(
                 "TXN-{0}-{1}",
