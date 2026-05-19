@@ -1,76 +1,70 @@
 using System;
 using System.Collections.Generic;
-using System.Configuration;
-using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Transactions;
 using ContosoCommerce.Core.Enums;
 using ContosoCommerce.Core.Exceptions;
 using ContosoCommerce.Core.Interfaces;
 using ContosoCommerce.Data;
 using ContosoCommerce.Data.Entities;
-using log4net;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Orders.Services
 {
-    /// <summary>
-    /// Order processing service with cross-module
-    /// dependencies on Inventory and Users.
-    /// Uses Task.Factory.StartNew with
-    /// LongRunning instead of async/await for
-    /// background payment processing. Reads
-    /// config via ConfigurationManager.
-    /// </summary>
-    public class OrderService : IOrderService
+    public class OrderService
+        : IOrderService
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(OrderService));
-
+        private readonly
+            ILogger<OrderService> _log;
         private readonly CommerceDbContext _db;
-        private readonly IInventoryService _inv;
+        private readonly
+            IInventoryService _inv;
         private readonly IUserService _users;
         private readonly IAuditService _audit;
         private readonly
             INotificationService _notify;
-
         private readonly string _paymentUrl;
 
         public OrderService(
             CommerceDbContext context,
-            IInventoryService inventoryService,
+            IInventoryService invService,
             IUserService userService,
             IAuditService auditService,
-            INotificationService
-                notificationService)
+            INotificationService notifySvc,
+            IConfiguration config,
+            ILogger<OrderService> logger)
         {
             _db = context;
-            _inv = inventoryService;
+            _inv = invService;
             _users = userService;
             _audit = auditService;
-            _notify = notificationService;
+            _notify = notifySvc;
+            _log = logger;
 
-            _paymentUrl = ConfigurationManager
-                .AppSettings[
-                    "PaymentGatewayUrl"]
-                ?? "https://pay.contoso.com/api";
+            _paymentUrl = config[
+                "PaymentSettings:GatewayUrl"]
+                ?? "https://pay.contoso.com"
+                    + "/api";
         }
 
         public async Task<OrderDto>
             GetOrderAsync(int orderId)
         {
             var order = await _db.Orders
-                .Include(o => o.Items
-                    .Select(i => i.Product))
+                .Include(o => o.Items)
+                    .ThenInclude(
+                        i => i.Product)
                 .Include(o => o.User)
                 .FirstOrDefaultAsync(
                     o => o.Id == orderId);
 
             if (order == null)
             {
-                throw new EntityNotFoundException(
-                    "Order", orderId);
+                throw
+                    new EntityNotFoundException(
+                        "Order", orderId);
             }
             return MapToDto(order);
         }
@@ -82,14 +76,16 @@ namespace ContosoCommerce.Orders.Services
                 int pageSize)
         {
             var orders = await _db.Orders
-                .Include(o => o.Items
-                    .Select(i => i.Product))
+                .Include(o => o.Items)
+                    .ThenInclude(
+                        i => i.Product)
                 .Include(o => o.User)
-                .Where(o =>
-                    o.UserId == userId)
+                .Where(
+                    o => o.UserId == userId)
                 .OrderByDescending(
                     o => o.OrderDate)
-                .Skip((page - 1) * pageSize)
+                .Skip(
+                    (page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
 
@@ -98,33 +94,33 @@ namespace ContosoCommerce.Orders.Services
                 .ToList();
         }
 
-        /// <summary>
-        /// Creates order with TransactionScope
-        /// for multi-table consistency.
-        /// </summary>
         public async Task<OrderDto>
             CreateOrderAsync(
                 CreateOrderRequest request)
         {
-            Log.InfoFormat(
-                "Creating order for user {0}",
+            _log.LogInformation(
+                "Creating order for user"
+                + " {UserId}",
                 request.UserId);
 
             var user = await _users
-                .GetUserAsync(request.UserId);
+                .GetUserAsync(
+                    request.UserId);
 
-            using (var scope =
-                new TransactionScope(
-                    TransactionScopeAsyncFlowOption
-                        .Enabled))
+            await using var txn = await _db
+                .Database
+                .BeginTransactionAsync();
+            try
             {
                 var order = new Order
                 {
-                    UserId = request.UserId,
+                    UserId =
+                        request.UserId,
                     Status =
                         OrderStatus.Pending,
                     ShippingAddress =
-                        request.ShippingAddress,
+                        request
+                            .ShippingAddress,
                     OrderDate =
                         DateTime.UtcNow,
                     TotalAmount = 0
@@ -149,13 +145,13 @@ namespace ContosoCommerce.Orders.Services
 
                     if (!reserved)
                     {
-                        throw
-                            new BusinessRuleException(
+                        throw new
+                            BusinessRuleException(
                                 "InsufficientStock",
                                 string.Format(
-                                    "Not enough "
-                                    + "stock for "
-                                    + "{0}.",
+                                    "Not enough"
+                                    + " stock"
+                                    + " for {0}.",
                                     product
                                         .Name));
                     }
@@ -182,18 +178,23 @@ namespace ContosoCommerce.Orders.Services
 
                 order.TotalAmount = total;
                 await _db.SaveChangesAsync();
-                scope.Complete();
+                await txn.CommitAsync();
 
                 await _audit.LogAsync(
                     "Order", order.Id,
                     "Create",
                     string.Format(
-                        "Order created for "
-                        + "${0:N2}",
+                        "Order created"
+                        + " for ${0:N2}",
                         total));
 
                 return await GetOrderAsync(
                     order.Id);
+            }
+            catch
+            {
+                await txn.RollbackAsync();
+                throw;
             }
         }
 
@@ -209,13 +210,15 @@ namespace ContosoCommerce.Orders.Services
 
             if (order == null)
             {
-                throw new EntityNotFoundException(
-                    "Order", orderId);
+                throw
+                    new EntityNotFoundException(
+                        "Order", orderId);
             }
 
             var oldStatus = order.Status;
             order.Status = newStatus;
-            order.UpdatedAt = DateTime.UtcNow;
+            order.UpdatedAt =
+                DateTime.UtcNow;
             await _db.SaveChangesAsync();
 
             await _audit.LogAsync(
@@ -238,39 +241,32 @@ namespace ContosoCommerce.Orders.Services
                     orderId,
                     newStatus.ToString());
 
-            return await GetOrderAsync(orderId);
+            return await GetOrderAsync(
+                orderId);
         }
 
-        /// <summary>
-        /// Mock payment processor using
-        /// Task.Factory.StartNew with
-        /// LongRunning (anti-pattern for
-        /// .NET 8 migration).
-        /// </summary>
         public async Task<PaymentResultDto>
             ProcessPaymentAsync(
                 int orderId,
                 PaymentRequest request)
         {
-            Log.InfoFormat(
-                "Processing payment for "
-                + "order {0} at {1}",
+            _log.LogInformation(
+                "Processing payment for"
+                + " order {Id} at {Url}",
                 orderId, _paymentUrl);
 
             var order = await _db.Orders
                 .FindAsync(orderId);
             if (order == null)
             {
-                throw new EntityNotFoundException(
-                    "Order", orderId);
+                throw
+                    new EntityNotFoundException(
+                        "Order", orderId);
             }
 
-            var result = await Task.Factory
-                .StartNew(() =>
-                    SimulatePayment(
-                        request, order),
-                    TaskCreationOptions
-                        .LongRunning);
+            var result =
+                await SimulatePaymentAsync(
+                    request, order);
 
             var payment = new Payment
             {
@@ -296,7 +292,8 @@ namespace ContosoCommerce.Orders.Services
             if (result.Success)
             {
                 order.Status =
-                    OrderStatus.PaymentReceived;
+                    OrderStatus
+                        .PaymentReceived;
                 await _db.SaveChangesAsync();
             }
 
@@ -325,13 +322,13 @@ namespace ContosoCommerce.Orders.Services
                     o => o.TotalAmount);
         }
 
-        private PaymentResultDto
-            SimulatePayment(
+        private async
+            Task<PaymentResultDto>
+            SimulatePaymentAsync(
                 PaymentRequest request,
                 Order order)
         {
-            System.Threading.Thread
-                .Sleep(500);
+            await Task.Delay(500);
 
             var txnId = string.Format(
                 "TXN-{0}-{1}",
@@ -341,8 +338,8 @@ namespace ContosoCommerce.Orders.Services
                     .ToString("N")
                     .Substring(0, 8));
 
-            Log.InfoFormat(
-                "Payment simulated: {0}",
+            _log.LogInformation(
+                "Payment simulated: {TxnId}",
                 txnId);
 
             return new PaymentResultDto
@@ -355,19 +352,20 @@ namespace ContosoCommerce.Orders.Services
             };
         }
 
-        private async Task ReleaseOrderStock(
-            int orderId)
+        private async Task
+            ReleaseOrderStock(int orderId)
         {
             var items = await _db.OrderItems
-                .Where(i =>
-                    i.OrderId == orderId)
+                .Where(
+                    i => i.OrderId == orderId)
                 .ToListAsync();
 
             foreach (var item in items)
             {
-                await _inv.ReleaseStockAsync(
-                    item.ProductId,
-                    item.Quantity);
+                await _inv
+                    .ReleaseStockAsync(
+                        item.ProductId,
+                        item.Quantity);
             }
         }
 
@@ -387,7 +385,8 @@ namespace ContosoCommerce.Orders.Services
                         ? o.User.FullName
                         : null,
                 Status = o.Status,
-                TotalAmount = o.TotalAmount,
+                TotalAmount =
+                    o.TotalAmount,
                 ShippingAddress =
                     o.ShippingAddress,
                 OrderDate = o.OrderDate,
@@ -398,7 +397,8 @@ namespace ContosoCommerce.Orders.Services
                             ProductId =
                                 i.ProductId,
                             ProductName =
-                                i.Product != null
+                                i.Product
+                                    != null
                                     ? i.Product
                                         .Name
                                     : null,

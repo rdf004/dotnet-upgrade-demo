@@ -1,39 +1,33 @@
 using System.Threading.Tasks;
-using System.Web.Http;
 using ContosoCommerce.Core.DTOs;
 using ContosoCommerce.Core.Exceptions;
 using ContosoCommerce.Core.Interfaces;
-using ContosoCommerce.Users.Filters;
-using log4net;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Users.Controllers
 {
-    /// <summary>
-    /// CRUD endpoints for user management.
-    /// </summary>
-    [TokenAuthorize]
-    [RoutePrefix("api/users")]
+    [Authorize]
+    [ApiController]
+    [Route("api/users")]
     public class UsersController
-        : ApiController
+        : ControllerBase
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(UsersController));
-
+        private readonly
+            ILogger<UsersController> _log;
         private readonly IUserService _svc;
 
         public UsersController(
-            IUserService userService)
+            IUserService userService,
+            ILogger<UsersController> logger)
         {
             _svc = userService;
+            _log = logger;
         }
 
-        /// <summary>
-        /// GET api/users?page=1&amp;pageSize=10
-        /// </summary>
-        [HttpGet]
-        [Route("")]
-        public async Task<IHttpActionResult>
+        [HttpGet("")]
+        public async Task<IActionResult>
             GetAll(
                 int page = 1,
                 int pageSize = 10)
@@ -59,12 +53,8 @@ namespace ContosoCommerce.Users.Controllers
                     .Ok(result));
         }
 
-        /// <summary>
-        /// GET api/users/5
-        /// </summary>
-        [HttpGet]
-        [Route("{id:int}")]
-        public async Task<IHttpActionResult>
+        [HttpGet("{id:int}")]
+        public async Task<IActionResult>
             Get(int id)
         {
             try
@@ -81,17 +71,12 @@ namespace ContosoCommerce.Users.Controllers
             }
         }
 
-        /// <summary>
-        /// POST api/users
-        /// </summary>
-        [HttpPost]
-        [Route("")]
-        public async Task<IHttpActionResult>
+        [HttpPost("")]
+        public async Task<IActionResult>
             Create(
                 CreateUserRequest request)
         {
-            if (request == null
-                || !ModelState.IsValid)
+            if (!ModelState.IsValid)
             {
                 return BadRequest(
                     ModelState);
@@ -116,18 +101,13 @@ namespace ContosoCommerce.Users.Controllers
             }
         }
 
-        /// <summary>
-        /// PUT api/users/5
-        /// </summary>
-        [HttpPut]
-        [Route("{id:int}")]
-        public async Task<IHttpActionResult>
+        [HttpPut("{id:int}")]
+        public async Task<IActionResult>
             Update(
                 int id,
                 UpdateUserRequest request)
         {
-            if (request == null
-                || !ModelState.IsValid)
+            if (!ModelState.IsValid)
             {
                 return BadRequest(
                     ModelState);
@@ -149,12 +129,8 @@ namespace ContosoCommerce.Users.Controllers
             }
         }
 
-        /// <summary>
-        /// DELETE api/users/5
-        /// </summary>
-        [HttpDelete]
-        [Route("{id:int}")]
-        public async Task<IHttpActionResult>
+        [HttpDelete("{id:int}")]
+        public async Task<IActionResult>
             Delete(int id)
         {
             try

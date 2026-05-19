@@ -1,40 +1,35 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
-using System.Web.Http;
 using ContosoCommerce.Core.DTOs;
 using ContosoCommerce.Core.Enums;
 using ContosoCommerce.Core.Exceptions;
 using ContosoCommerce.Core.Interfaces;
-using ContosoCommerce.Users.Filters;
-using log4net;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Orders.Controllers
 {
-    /// <summary>
-    /// Order management endpoints.
-    /// </summary>
-    [TokenAuthorize]
-    [RoutePrefix("api/orders")]
+    [Authorize]
+    [ApiController]
+    [Route("api/orders")]
     public class OrdersController
-        : ApiController
+        : ControllerBase
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(OrdersController));
-
+        private readonly
+            ILogger<OrdersController> _log;
         private readonly IOrderService _svc;
 
         public OrdersController(
-            IOrderService orderService)
+            IOrderService orderService,
+            ILogger<OrdersController> logger)
         {
             _svc = orderService;
+            _log = logger;
         }
 
-        /// <summary>
-        /// GET api/orders/5
-        /// </summary>
-        [HttpGet]
-        [Route("{id:int}")]
-        public async Task<IHttpActionResult>
+        [HttpGet("{id:int}")]
+        public async Task<IActionResult>
             Get(int id)
         {
             try
@@ -51,12 +46,8 @@ namespace ContosoCommerce.Orders.Controllers
             }
         }
 
-        /// <summary>
-        /// GET api/orders/user/3
-        /// </summary>
-        [HttpGet]
-        [Route("user/{userId:int}")]
-        public async Task<IHttpActionResult>
+        [HttpGet("user/{userId:int}")]
+        public async Task<IActionResult>
             GetUserOrders(
                 int userId,
                 int page = 1,
@@ -67,22 +58,16 @@ namespace ContosoCommerce.Orders.Controllers
                     userId, page, pageSize);
             return Ok(
                 ApiResponse<
-                    System.Collections.Generic
-                        .IList<OrderDto>>
+                    IList<OrderDto>>
                     .Ok(orders));
         }
 
-        /// <summary>
-        /// POST api/orders
-        /// </summary>
-        [HttpPost]
-        [Route("")]
-        public async Task<IHttpActionResult>
+        [HttpPost("")]
+        public async Task<IActionResult>
             Create(
                 CreateOrderRequest request)
         {
-            if (request == null
-                || !ModelState.IsValid)
+            if (!ModelState.IsValid)
             {
                 return BadRequest(
                     ModelState);
@@ -107,12 +92,8 @@ namespace ContosoCommerce.Orders.Controllers
             }
         }
 
-        /// <summary>
-        /// PUT api/orders/5/status
-        /// </summary>
-        [HttpPut]
-        [Route("{id:int}/status")]
-        public async Task<IHttpActionResult>
+        [HttpPut("{id:int}/status")]
+        public async Task<IActionResult>
             UpdateStatus(
                 int id,
                 OrderStatusRequest request)

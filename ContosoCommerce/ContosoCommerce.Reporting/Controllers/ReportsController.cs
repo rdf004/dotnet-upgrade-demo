@@ -1,252 +1,73 @@
 using System;
-using System.Net;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Threading.Tasks;
-using System.Web.Http;
-using System.Xml.Serialization;
-using System.IO;
 using ContosoCommerce.Core.DTOs;
 using ContosoCommerce.Core.Interfaces;
-using ContosoCommerce.Users.Filters;
-using log4net;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Reporting.Controllers
 {
-    /// <summary>
-    /// Reporting and analytics endpoints.
-    /// Includes a legacy ASMX-style XML endpoint
-    /// for a "legacy integration partner".
-    /// </summary>
-    [TokenAuthorize]
-    [RoutePrefix("api/reports")]
+    [Authorize]
+    [ApiController]
+    [Route("api/reports")]
     public class ReportsController
-        : ApiController
+        : ControllerBase
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(ReportsController));
-
+        private readonly
+            ILogger<ReportsController> _log;
         private readonly IReportService _svc;
 
         public ReportsController(
-            IReportService reportService)
+            IReportService reportService,
+            ILogger<ReportsController> logger)
         {
             _svc = reportService;
+            _log = logger;
         }
 
-        /// <summary>
-        /// GET api/reports/sales
-        /// </summary>
-        [HttpGet]
-        [Route("sales")]
-        public async Task<IHttpActionResult>
-            GetSalesReport(
-                DateTime? startDate = null,
-                DateTime? endDate = null)
+        [HttpGet("sales")]
+        public async Task<IActionResult>
+            SalesReport(
+                DateTime? from = null,
+                DateTime? to = null)
         {
-            var start = startDate
+            var startDate = from
                 ?? DateTime.UtcNow
-                    .AddDays(-30);
-            var end = endDate
+                    .AddMonths(-1);
+            var endDate = to
                 ?? DateTime.UtcNow;
 
             var report = await _svc
-                .GetSalesReportAsync(
-                    start, end);
+                .GenerateSalesReportAsync(
+                    startDate, endDate);
             return Ok(
                 ApiResponse<SalesReportDto>
                     .Ok(report));
         }
 
-        /// <summary>
-        /// GET api/reports/inventory
-        /// </summary>
-        [HttpGet]
-        [Route("inventory")]
-        public async Task<IHttpActionResult>
-            GetInventoryReport()
+        [HttpGet("inventory")]
+        public async Task<IActionResult>
+            InventoryReport()
         {
             var report = await _svc
-                .GetInventoryReportAsync();
+                .GenerateInventoryReportAsync();
             return Ok(
                 ApiResponse<
                     InventoryReportDto>
                     .Ok(report));
         }
 
-        /// <summary>
-        /// GET api/reports/users
-        /// </summary>
-        [HttpGet]
-        [Route("users")]
-        public async Task<IHttpActionResult>
-            GetUserActivityReport(
-                DateTime? startDate = null,
-                DateTime? endDate = null)
+        [HttpGet("dashboard")]
+        public async Task<IActionResult>
+            Dashboard()
         {
-            var start = startDate
-                ?? DateTime.UtcNow
-                    .AddDays(-30);
-            var end = endDate
-                ?? DateTime.UtcNow;
-
-            var report = await _svc
-                .GetUserActivityReportAsync(
-                    start, end);
+            var summary = await _svc
+                .GetDashboardSummaryAsync();
             return Ok(
                 ApiResponse<
-                    UserActivityReportDto>
-                    .Ok(report));
-        }
-
-        /// <summary>
-        /// GET api/reports/sales/chart
-        /// </summary>
-        [HttpGet]
-        [Route("sales/chart")]
-        public async Task<HttpResponseMessage>
-            GetSalesChart(
-                DateTime? startDate = null,
-                DateTime? endDate = null)
-        {
-            var start = startDate
-                ?? DateTime.UtcNow
-                    .AddDays(-30);
-            var end = endDate
-                ?? DateTime.UtcNow;
-
-            var imageData = await _svc
-                .GetSalesChartImageAsync(
-                    start, end);
-
-            var response =
-                new HttpResponseMessage(
-                    HttpStatusCode.OK);
-            response.Content =
-                new ByteArrayContent(
-                    imageData);
-            response.Content.Headers
-                .ContentType =
-                    new MediaTypeHeaderValue(
-                        "image/png");
-            return response;
-        }
-
-        /// <summary>
-        /// GET api/reports/sales/csv
-        /// </summary>
-        [HttpGet]
-        [Route("sales/csv")]
-        public async Task<HttpResponseMessage>
-            ExportSalesCsv(
-                DateTime? startDate = null,
-                DateTime? endDate = null)
-        {
-            var start = startDate
-                ?? DateTime.UtcNow
-                    .AddDays(-30);
-            var end = endDate
-                ?? DateTime.UtcNow;
-
-            var csv = await _svc
-                .ExportSalesReportCsvAsync(
-                    start, end);
-
-            var response =
-                new HttpResponseMessage(
-                    HttpStatusCode.OK);
-            response.Content =
-                new StringContent(
-                    csv,
-                    Encoding.UTF8,
-                    "text/csv");
-            response.Content.Headers
-                .ContentDisposition =
-                    new ContentDispositionHeaderValue(
-                        "attachment")
-                    {
-                        FileName =
-                            "sales_report.csv"
-                    };
-            return response;
-        }
-
-        /// <summary>
-        /// GET api/reports/inventory/csv
-        /// </summary>
-        [HttpGet]
-        [Route("inventory/csv")]
-        public async Task<HttpResponseMessage>
-            ExportInventoryCsv()
-        {
-            var csv = await _svc
-                .ExportInventoryReportCsvAsync();
-
-            var response =
-                new HttpResponseMessage(
-                    HttpStatusCode.OK);
-            response.Content =
-                new StringContent(
-                    csv,
-                    Encoding.UTF8,
-                    "text/csv");
-            response.Content.Headers
-                .ContentDisposition =
-                    new ContentDispositionHeaderValue(
-                        "attachment")
-                    {
-                        FileName =
-                            "inventory_report"
-                            + ".csv"
-                    };
-            return response;
-        }
-
-        /// <summary>
-        /// GET api/reports/sales/xml
-        /// Legacy ASMX-style XML endpoint for
-        /// a "legacy integration partner".
-        /// Returns XML via XmlSerializer.
-        /// </summary>
-        [HttpGet]
-        [Route("sales/xml")]
-        public async Task<HttpResponseMessage>
-            GetSalesReportXml(
-                DateTime? startDate = null,
-                DateTime? endDate = null)
-        {
-            var start = startDate
-                ?? DateTime.UtcNow
-                    .AddDays(-30);
-            var end = endDate
-                ?? DateTime.UtcNow;
-
-            var report = await _svc
-                .GetSalesReportAsync(
-                    start, end);
-
-            var serializer =
-                new XmlSerializer(
-                    typeof(SalesReportDto));
-
-            using (var writer =
-                new StringWriter())
-            {
-                serializer.Serialize(
-                    writer, report);
-
-                var response =
-                    new HttpResponseMessage(
-                        HttpStatusCode.OK);
-                response.Content =
-                    new StringContent(
-                        writer.ToString(),
-                        Encoding.UTF8,
-                        "application/xml");
-                return response;
-            }
+                    DashboardSummaryDto>
+                    .Ok(summary));
         }
     }
 }

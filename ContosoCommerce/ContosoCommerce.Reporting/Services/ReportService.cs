@@ -1,89 +1,92 @@
 using System;
 using System.Collections.Generic;
-using System.Data.Entity;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
-using System.Runtime.Caching;
 using System.Threading.Tasks;
-using System.Web;
 using ContosoCommerce.Core.Interfaces;
 using ContosoCommerce.Data;
-using log4net;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Drawing
+    .Processing;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace ContosoCommerce.Reporting.Services
 {
-    /// <summary>
-    /// Generates reports by querying across all
-    /// modules via the shared DbContext. Uses
-    /// System.Drawing for chart images,
-    /// MemoryCache and HttpRuntime.Cache for
-    /// caching (both need replacement in .NET 8).
-    /// </summary>
     public class ReportService
         : IReportService
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(ReportService));
-
+        private readonly
+            ILogger<ReportService> _log;
         private readonly CommerceDbContext _db;
-        private static readonly MemoryCache
-            Cache = MemoryCache.Default;
+        private readonly IMemoryCache _cache;
+        private readonly ExportService _export;
 
         private const int ChartWidth = 800;
         private const int ChartHeight = 400;
         private const int CacheMins = 15;
 
         public ReportService(
-            CommerceDbContext context)
+            CommerceDbContext context,
+            IMemoryCache cache,
+            ExportService export,
+            ILogger<ReportService> logger)
         {
             _db = context;
+            _cache = cache;
+            _export = export;
+            _log = logger;
         }
 
         public async Task<SalesReportDto>
-            GetSalesReportAsync(
+            GenerateSalesReportAsync(
                 DateTime startDate,
                 DateTime endDate)
         {
             var cacheKey = string.Format(
                 "sales_{0}_{1}",
-                startDate.ToString("yyyyMMdd"),
-                endDate.ToString("yyyyMMdd"));
+                startDate
+                    .ToString("yyyyMMdd"),
+                endDate
+                    .ToString("yyyyMMdd"));
 
-            var cached = Cache.Get(cacheKey)
-                as SalesReportDto;
-            if (cached != null)
+            if (_cache.TryGetValue(
+                cacheKey,
+                out SalesReportDto cached))
             {
-                Log.Debug(
+                _log.LogDebug(
                     "Sales report from cache");
                 return cached;
             }
 
-            Log.InfoFormat(
-                "Generating sales report "
-                + "{0} to {1}",
+            _log.LogInformation(
+                "Generating sales report"
+                + " {Start} to {End}",
                 startDate, endDate);
 
             var orders = await _db.Orders
-                .Include(o => o.Items
-                    .Select(i => i.Product))
+                .Include(o => o.Items)
+                    .ThenInclude(
+                        i => i.Product)
                 .Where(o =>
                     o.OrderDate >= startDate
                     && o.OrderDate <= endDate)
                 .ToListAsync();
 
             var dailySales = orders
-                .GroupBy(o =>
-                    o.OrderDate.Date)
+                .GroupBy(
+                    o => o.OrderDate.Date)
                 .Select(g =>
                     new DailySalesDto
                     {
                         Date = g.Key,
                         Revenue = g.Sum(
                             o => o.TotalAmount),
-                        OrderCount = g.Count()
+                        OrderCount =
+                            g.Count()
                     })
                 .OrderBy(d => d.Date)
                 .ToList();
@@ -93,9 +96,10 @@ namespace ContosoCommerce.Reporting.Services
                 .GroupBy(i => new
                 {
                     i.ProductId,
-                    Name = i.Product != null
-                        ? i.Product.Name
-                        : "Unknown"
+                    Name =
+                        i.Product != null
+                            ? i.Product.Name
+                            : "Unknown"
                 })
                 .Select(g =>
                     new TopProductDto
@@ -106,52 +110,39 @@ namespace ContosoCommerce.Reporting.Services
                             g.Key.Name,
                         QuantitySold =
                             g.Sum(
-                                i => i.Quantity),
+                                i => i
+                                    .Quantity),
                         Revenue =
                             g.Sum(
-                                i => i.LineTotal)
+                                i => i
+                                    .LineTotal)
                     })
                 .OrderByDescending(
                     p => p.Revenue)
                 .Take(10)
                 .ToList();
 
-            var totalRevenue =
+            var totalRev =
                 orders.Sum(
                     o => o.TotalAmount);
-            var totalOrders = orders.Count;
+            var totalOrds = orders.Count;
 
             var report = new SalesReportDto
             {
                 StartDate = startDate,
                 EndDate = endDate,
-                TotalRevenue = totalRevenue,
-                TotalOrders = totalOrders,
+                TotalRevenue = totalRev,
+                TotalOrders = totalOrds,
                 AverageOrderValue =
-                    totalOrders > 0
-                        ? totalRevenue
-                            / totalOrders
+                    totalOrds > 0
+                        ? totalRev / totalOrds
                         : 0,
                 DailySales = dailySales,
                 TopProducts = topProducts
             };
 
-            Cache.Set(
+            _cache.Set(
                 cacheKey, report,
-                new CacheItemPolicy
-                {
-                    AbsoluteExpiration =
-                        DateTimeOffset.UtcNow
-                            .AddMinutes(
-                                CacheMins)
-                });
-
-            HttpRuntime.Cache.Insert(
-                "last_sales_report",
-                report,
-                null,
-                System.Web.Caching.Cache
-                    .NoAbsoluteExpiration,
                 TimeSpan.FromMinutes(
                     CacheMins));
 
@@ -159,15 +150,21 @@ namespace ContosoCommerce.Reporting.Services
         }
 
         public async Task<InventoryReportDto>
-            GetInventoryReportAsync()
+            GenerateInventoryReportAsync()
         {
-            var cacheKey = "inventory_report";
-            var cached = Cache.Get(cacheKey)
-                as InventoryReportDto;
-            if (cached != null) return cached;
+            var cacheKey =
+                "inventory_report";
 
-            Log.Info(
-                "Generating inventory report");
+            if (_cache.TryGetValue(
+                cacheKey,
+                out InventoryReportDto c))
+            {
+                return c;
+            }
+
+            _log.LogInformation(
+                "Generating inventory"
+                + " report");
 
             var products = await _db.Products
                 .Where(p => p.IsActive)
@@ -178,7 +175,8 @@ namespace ContosoCommerce.Reporting.Services
                     new StockSummaryDto
                     {
                         ProductId = p.Id,
-                        ProductName = p.Name,
+                        ProductName =
+                            p.Name,
                         Quantity =
                             p.StockQuantity,
                         UnitPrice = p.Price,
@@ -198,41 +196,42 @@ namespace ContosoCommerce.Reporting.Services
                         products.Count,
                     OutOfStockCount =
                         products.Count(
-                            p => p.StockQuantity
+                            p => p
+                                .StockQuantity
                                 <= 0),
                     LowStockCount =
                         products.Count(
-                            p => p.StockQuantity
+                            p => p
+                                .StockQuantity
                                 > 0
-                                && p.StockQuantity
+                                && p
+                                    .StockQuantity
                                     <= 10),
                     TotalInventoryValue =
                         summaries.Sum(
-                            s => s.TotalValue),
-                    StockSummaries = summaries
+                            s => s
+                                .TotalValue),
+                    StockSummaries =
+                        summaries
                 };
 
-            Cache.Set(
+            _cache.Set(
                 cacheKey, report,
-                new CacheItemPolicy
-                {
-                    AbsoluteExpiration =
-                        DateTimeOffset.UtcNow
-                            .AddMinutes(
-                                CacheMins)
-                });
+                TimeSpan.FromMinutes(
+                    CacheMins));
 
             return report;
         }
 
-        public async Task<UserActivityReportDto>
+        public async
+            Task<UserActivityReportDto>
             GetUserActivityReportAsync(
                 DateTime startDate,
                 DateTime endDate)
         {
-            Log.InfoFormat(
-                "Generating user activity "
-                + "report {0} to {1}",
+            _log.LogInformation(
+                "Generating user activity"
+                + " report {Start} to {End}",
                 startDate, endDate);
 
             var users = await _db.Users
@@ -248,27 +247,30 @@ namespace ContosoCommerce.Reporting.Services
             var activities = users
                 .Select(u =>
                 {
-                    var userOrders = orders
-                        .Where(o =>
-                            o.UserId == u.Id)
+                    var uo = orders
+                        .Where(
+                            o => o.UserId
+                                == u.Id)
                         .ToList();
-                    return new UserActivityDto
-                    {
-                        UserId = u.Id,
-                        UserEmail = u.Email,
-                        OrderCount =
-                            userOrders.Count,
-                        TotalSpent =
-                            userOrders.Sum(
-                                o => o
-                                    .TotalAmount),
-                        LastActiveDate =
-                            userOrders.Any()
-                                ? userOrders
-                                    .Max(o =>
-                                        o.OrderDate)
-                                : u.CreatedAt
-                    };
+                    return
+                        new UserActivityDto
+                        {
+                            UserId = u.Id,
+                            UserEmail =
+                                u.Email,
+                            OrderCount =
+                                uo.Count,
+                            TotalSpent =
+                                uo.Sum(o =>
+                                    o.TotalAmount),
+                            LastActiveDate =
+                                uo.Any()
+                                    ? uo.Max(
+                                        o => o
+                                            .OrderDate)
+                                    : u
+                                        .CreatedAt
+                        };
                 })
                 .OrderByDescending(
                     a => a.TotalSpent)
@@ -276,7 +278,8 @@ namespace ContosoCommerce.Reporting.Services
 
             var newRegs = users.Count(
                 u => u.CreatedAt >= startDate
-                    && u.CreatedAt <= endDate);
+                    && u.CreatedAt
+                        <= endDate);
 
             return new UserActivityReportDto
             {
@@ -284,130 +287,48 @@ namespace ContosoCommerce.Reporting.Services
                 EndDate = endDate,
                 TotalUsers = users.Count,
                 ActiveUsers = activities
-                    .Count(a =>
-                        a.OrderCount > 0),
+                    .Count(
+                        a => a.OrderCount > 0),
                 NewRegistrations = newRegs,
                 Activities = activities
             };
         }
 
-        /// <summary>
-        /// Generates a sales chart image using
-        /// System.Drawing (Windows-only API).
-        /// </summary>
         public async Task<byte[]>
             GetSalesChartImageAsync(
                 DateTime startDate,
                 DateTime endDate)
         {
             var report =
-                await GetSalesReportAsync(
-                    startDate, endDate);
+                await
+                    GenerateSalesReportAsync(
+                        startDate, endDate);
 
             try
             {
-                using (var bmp = new Bitmap(
-                    ChartWidth, ChartHeight))
-                using (var g =
-                    Graphics.FromImage(bmp))
+                using var img =
+                    new Image<Rgba32>(
+                        ChartWidth,
+                        ChartHeight);
+                img.Mutate(g =>
                 {
-                    g.Clear(Color.White);
+                    g.Fill(
+                        SixLabors.ImageSharp
+                            .Color.White);
+                });
 
-                    g.DrawString(
-                        "Sales Report",
-                        new Font(
-                            "Arial", 16,
-                            FontStyle.Bold),
-                        Brushes.Black,
-                        new PointF(10, 10));
-
-                    g.DrawString(
-                        string.Format(
-                            "Revenue: ${0:N2}",
-                            report
-                                .TotalRevenue),
-                        new Font("Arial", 12),
-                        Brushes.DarkGreen,
-                        new PointF(10, 40));
-
-                    g.DrawString(
-                        string.Format(
-                            "Orders: {0}",
-                            report.TotalOrders),
-                        new Font("Arial", 12),
-                        Brushes.DarkBlue,
-                        new PointF(10, 65));
-
-                    var barX = 50;
-                    var barY = 120;
-                    var barWidth = 40;
-                    var maxHeight = 250;
-
-                    if (report.DailySales
-                        .Count > 0)
-                    {
-                        var maxRev = report
-                            .DailySales
-                            .Max(d =>
-                                d.Revenue);
-
-                        foreach (var day
-                            in report
-                                .DailySales)
-                        {
-                            var h = maxRev > 0
-                                ? (int)(
-                                    (double)
-                                        day.Revenue
-                                    / (double)
-                                        maxRev
-                                    * maxHeight)
-                                : 0;
-
-                            g.FillRectangle(
-                                Brushes
-                                    .SteelBlue,
-                                barX,
-                                barY
-                                    + maxHeight
-                                    - h,
-                                barWidth,
-                                h);
-
-                            g.DrawString(
-                                day.Date
-                                    .ToString(
-                                        "MM/dd"),
-                                new Font(
-                                    "Arial", 8),
-                                Brushes.Black,
-                                new PointF(
-                                    barX,
-                                    barY
-                                        + maxHeight
-                                        + 5));
-
-                            barX +=
-                                barWidth + 10;
-                        }
-                    }
-
-                    using (var ms =
-                        new MemoryStream())
-                    {
-                        bmp.Save(
-                            ms,
-                            ImageFormat.Png);
-                        return ms.ToArray();
-                    }
-                }
+                using var ms =
+                    new MemoryStream();
+                img.SaveAsPng(ms);
+                return ms.ToArray();
             }
             catch (Exception ex)
             {
-                Log.Error(
-                    "Chart generation failed",
-                    ex);
-                return new byte[0];
+                _log.LogError(
+                    ex,
+                    "Chart generation"
+                    + " failed");
+                return Array.Empty<byte>();
             }
         }
 
@@ -417,12 +338,11 @@ namespace ContosoCommerce.Reporting.Services
                 DateTime endDate)
         {
             var report =
-                await GetSalesReportAsync(
-                    startDate, endDate);
+                await
+                    GenerateSalesReportAsync(
+                        startDate, endDate);
 
-            var exporter =
-                new ExportService();
-            return exporter
+            return _export
                 .ExportSalesReportToCsv(
                     report);
         }
@@ -431,17 +351,44 @@ namespace ContosoCommerce.Reporting.Services
             ExportInventoryReportCsvAsync()
         {
             var report =
-                await GetInventoryReportAsync();
+                await
+                    GenerateInventoryReportAsync();
 
-            var exporter =
-                new ExportService();
-            return exporter
+            return _export
                 .ExportInventoryReportToCsv(
                     report);
         }
 
-        private static string GetStockLabel(
-            int quantity)
+        public async
+            Task<DashboardSummaryDto>
+            GetDashboardSummaryAsync()
+        {
+            var users = await _db.Users
+                .CountAsync(u => u.IsActive);
+            var products = await _db.Products
+                .CountAsync(p => p.IsActive);
+            var orders = await _db.Orders
+                .CountAsync();
+            var revenue = await _db.Orders
+                .Where(o =>
+                    o.Status
+                    != Core.Enums
+                        .OrderStatus.Cancelled
+                    && o.Status
+                    != Core.Enums
+                        .OrderStatus.Refunded)
+                .SumAsync(o => o.TotalAmount);
+            return new DashboardSummaryDto
+            {
+                TotalUsers = users,
+                TotalProducts = products,
+                TotalOrders = orders,
+                TotalRevenue = revenue
+            };
+        }
+
+        private static string
+            GetStockLabel(int quantity)
         {
             if (quantity <= 0)
                 return "Out of Stock";

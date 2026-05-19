@@ -1,23 +1,14 @@
 using System;
 using System.Collections.Generic;
-using System.Data.Entity;
-using System.Web.Security;
 using ContosoCommerce.Core.Enums;
 using ContosoCommerce.Data.Entities;
+using Microsoft.AspNetCore.Identity;
 
 namespace ContosoCommerce.Data
 {
-    /// <summary>
-    /// Seeds the database with demo data on
-    /// first creation. Uses the deprecated
-    /// FormsAuthentication API for password
-    /// hashing (migration target).
-    /// </summary>
-    public class CommerceDbInitializer
-        : CreateDatabaseIfNotExists<
-            CommerceDbContext>
+    public static class CommerceDbInitializer
     {
-        protected override void Seed(
+        public static void Seed(
             CommerceDbContext context)
         {
             SeedUsers(context);
@@ -27,33 +18,44 @@ namespace ContosoCommerce.Data
             context.SaveChanges();
         }
 
-        private void SeedUsers(
+        private static void SeedUsers(
             CommerceDbContext context)
         {
-            var hash = HashPassword("P@ssw0rd!");
+            var hasher =
+                new PasswordHasher<User>();
+            var tmp = new User();
+            var hash = hasher
+                .HashPassword(
+                    tmp, "P@ssw0rd!");
 
             var users = new List<User>
             {
                 new User
                 {
-                    Email = "admin@contoso.com",
+                    Email =
+                        "admin@contoso.com",
                     PasswordHash = hash,
                     FirstName = "Admin",
                     LastName = "User",
-                    Role = UserRole.Administrator,
+                    Role =
+                        UserRole.Administrator,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt =
+                        DateTime.UtcNow
                 },
                 new User
                 {
-                    Email = "inv@contoso.com",
+                    Email =
+                        "inv@contoso.com",
                     PasswordHash = hash,
                     FirstName = "Inventory",
                     LastName = "Manager",
                     Role =
-                        UserRole.InventoryManager,
+                        UserRole
+                            .InventoryManager,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt =
+                        DateTime.UtcNow
                 },
                 new User
                 {
@@ -62,9 +64,11 @@ namespace ContosoCommerce.Data
                     PasswordHash = hash,
                     FirstName = "Jane",
                     LastName = "Customer",
-                    Role = UserRole.Customer,
+                    Role =
+                        UserRole.Customer,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt =
+                        DateTime.UtcNow
                 },
                 new User
                 {
@@ -73,9 +77,11 @@ namespace ContosoCommerce.Data
                     PasswordHash = hash,
                     FirstName = "Report",
                     LastName = "Viewer",
-                    Role = UserRole.ReportViewer,
+                    Role =
+                        UserRole.ReportViewer,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt =
+                        DateTime.UtcNow
                 }
             };
 
@@ -83,14 +89,15 @@ namespace ContosoCommerce.Data
                 u => context.Users.Add(u));
         }
 
-        private void SeedCategories(
+        private static void SeedCategories(
             CommerceDbContext context)
         {
             var electronics = new Category
             {
                 Name = "Electronics",
                 Description =
-                    "Electronic devices and gadgets"
+                    "Electronic devices"
+                    + " and gadgets"
             };
             var clothing = new Category
             {
@@ -101,16 +108,20 @@ namespace ContosoCommerce.Data
             var phones = new Category
             {
                 Name = "Phones",
-                Description = "Mobile phones",
+                Description =
+                    "Mobile phones",
                 ParentCategory = electronics
             };
 
-            context.Categories.Add(electronics);
-            context.Categories.Add(clothing);
-            context.Categories.Add(phones);
+            context.Categories
+                .Add(electronics);
+            context.Categories
+                .Add(clothing);
+            context.Categories
+                .Add(phones);
         }
 
-        private void SeedProducts(
+        private static void SeedProducts(
             CommerceDbContext context)
         {
             context.SaveChanges();
@@ -119,68 +130,79 @@ namespace ContosoCommerce.Data
             {
                 new Product
                 {
-                    Name = "Contoso Laptop Pro",
+                    Name =
+                        "Contoso Laptop Pro",
                     Description =
-                        "15-inch professional "
-                        + "laptop with 16GB RAM",
+                        "15-inch professional"
+                        + " laptop with"
+                        + " 16GB RAM",
                     Price = 1299.99m,
                     StockQuantity = 50,
                     Sku = "ELEC-LP-001",
                     CategoryId = 1,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt =
+                        DateTime.UtcNow
                 },
                 new Product
                 {
-                    Name = "Contoso Phone X",
+                    Name =
+                        "Contoso Phone X",
                     Description =
-                        "Flagship smartphone "
-                        + "with 128GB storage",
+                        "Flagship smartphone"
+                        + " with 128GB"
+                        + " storage",
                     Price = 899.99m,
                     StockQuantity = 100,
                     Sku = "ELEC-PH-001",
                     CategoryId = 3,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt =
+                        DateTime.UtcNow
                 },
                 new Product
                 {
-                    Name = "Contoso T-Shirt",
+                    Name =
+                        "Contoso T-Shirt",
                     Description =
-                        "Premium cotton branded "
-                        + "t-shirt",
+                        "Premium cotton"
+                        + " branded t-shirt",
                     Price = 29.99m,
                     StockQuantity = 500,
                     Sku = "CLTH-TS-001",
                     CategoryId = 2,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt =
+                        DateTime.UtcNow
                 },
                 new Product
                 {
-                    Name = "Wireless Mouse",
+                    Name =
+                        "Wireless Mouse",
                     Description =
-                        "Ergonomic wireless "
-                        + "mouse",
+                        "Ergonomic wireless"
+                        + " mouse",
                     Price = 49.99m,
                     StockQuantity = 3,
                     Sku = "ELEC-MS-001",
                     CategoryId = 1,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt =
+                        DateTime.UtcNow
                 },
                 new Product
                 {
                     Name = "USB-C Hub",
                     Description =
-                        "7-port USB-C hub with "
-                        + "HDMI",
+                        "7-port USB-C hub"
+                        + " with HDMI",
                     Price = 79.99m,
                     StockQuantity = 0,
                     Sku = "ELEC-HB-001",
                     CategoryId = 1,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt =
+                        DateTime.UtcNow
                 }
             };
 
@@ -188,7 +210,7 @@ namespace ContosoCommerce.Data
                 p => context.Products.Add(p));
         }
 
-        private void SeedOrders(
+        private static void SeedOrders(
             CommerceDbContext context)
         {
             context.SaveChanges();
@@ -196,10 +218,12 @@ namespace ContosoCommerce.Data
             var order = new Order
             {
                 UserId = 3,
-                Status = OrderStatus.Delivered,
+                Status =
+                    OrderStatus.Delivered,
                 TotalAmount = 1329.98m,
                 ShippingAddress =
-                    "123 Main St, Redmond, WA",
+                    "123 Main St,"
+                    + " Redmond, WA",
                 OrderDate =
                     DateTime.UtcNow
                         .AddDays(-7)
@@ -228,30 +252,25 @@ namespace ContosoCommerce.Data
             };
 
             items.ForEach(
-                i => context.OrderItems.Add(i));
+                i => context.OrderItems
+                    .Add(i));
 
-            context.Payments.Add(new Payment
-            {
-                OrderId = order.Id,
-                Amount = 1329.98m,
-                TransactionId =
-                    "TXN-SEED-001",
-                Status = "Completed",
-                PaymentMethod = "CreditCard",
-                ProcessedAt =
-                    DateTime.UtcNow
-                        .AddDays(-7)
-            });
+            context.Payments.Add(
+                new Payment
+                {
+                    OrderId = order.Id,
+                    Amount = 1329.98m,
+                    TransactionId =
+                        "TXN-SEED-001",
+                    Status = "Completed",
+                    PaymentMethod =
+                        "CreditCard",
+                    ProcessedAt =
+                        DateTime.UtcNow
+                            .AddDays(-7)
+                });
         }
 
-        #pragma warning disable 618
-        private static string HashPassword(
-            string password)
-        {
-            return FormsAuthentication
-                .HashPasswordForStoringInConfigFile(
-                    password, "SHA256");
-        }
-        #pragma warning restore 618
+
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using System.ComponentModel.DataAnnotations
+    .Schema;
 
 namespace ContosoCommerce.Data.Entities
 {
@@ -10,12 +11,12 @@ namespace ContosoCommerce.Data.Entities
     {
         [Key]
         [DatabaseGenerated(
-            DatabaseGeneratedOption.Identity)]
+            DatabaseGeneratedOption
+                .Identity)]
         public int Id { get; set; }
 
         [Required]
         [MaxLength(512)]
-        [Index(IsUnique = true)]
         public string Token { get; set; }
 
         public int UserId { get; set; }

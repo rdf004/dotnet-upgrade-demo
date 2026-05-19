@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using System.ComponentModel.DataAnnotations
+    .Schema;
 
 namespace ContosoCommerce.Data.Entities
 {
@@ -10,7 +11,8 @@ namespace ContosoCommerce.Data.Entities
     {
         [Key]
         [DatabaseGenerated(
-            DatabaseGeneratedOption.Identity)]
+            DatabaseGeneratedOption
+                .Identity)]
         public int Id { get; set; }
 
         [Required]
@@ -27,7 +29,6 @@ namespace ContosoCommerce.Data.Entities
 
         [Required]
         [MaxLength(50)]
-        [Index(IsUnique = true)]
         public string Sku { get; set; }
 
         public int? CategoryId { get; set; }
@@ -40,7 +41,10 @@ namespace ContosoCommerce.Data.Entities
 
         public byte[] ImageData { get; set; }
 
-        public byte[] ThumbnailData { get; set; }
+        public byte[] ThumbnailData
+        {
+            get; set;
+        }
 
         public bool IsActive { get; set; }
 
