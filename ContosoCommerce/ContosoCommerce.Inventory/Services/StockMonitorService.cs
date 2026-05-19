@@ -8,35 +8,49 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace ContosoCommerce.Inventory.Services
 {
+    public class StockMonitorOptions
+    {
+        public int Threshold { get; set; }
+            = 10;
+        public double IntervalMinutes
+            { get; set; } = 30;
+    }
+
     public class StockMonitorWorker
         : BackgroundService
     {
         private readonly
             ILogger<StockMonitorWorker> _log;
         private readonly
-            IServiceScopeFactory _scopeFactory;
+            IServiceScopeFactory
+                _scopeFactory;
         private readonly int _threshold;
         private readonly TimeSpan _interval;
 
         public StockMonitorWorker(
             IServiceScopeFactory scopeFactory,
             ILogger<StockMonitorWorker> log,
-            int threshold = 10,
-            double intervalMinutes = 30)
+            IOptions<StockMonitorOptions>
+                opts)
         {
             _scopeFactory = scopeFactory;
             _log = log;
-            _threshold = threshold;
+            _threshold =
+                opts.Value.Threshold;
             _interval = TimeSpan
-                .FromMinutes(intervalMinutes);
+                .FromMinutes(
+                    opts.Value
+                        .IntervalMinutes);
         }
 
         protected override async Task
             ExecuteAsync(
-                CancellationToken stoppingToken)
+                CancellationToken
+                    stoppingToken)
         {
             _log.LogInformation(
                 "Stock monitor starting."
@@ -66,7 +80,8 @@ namespace ContosoCommerce.Inventory.Services
                 "Stock monitor stopping.");
         }
 
-        private async Task CheckStockLevels()
+        private async Task
+            CheckStockLevels()
         {
             _log.LogDebug(
                 "Running stock level check");
@@ -92,7 +107,8 @@ namespace ContosoCommerce.Inventory.Services
                 + " low-stock products",
                 lowStock.Count);
 
-            foreach (var product in lowStock)
+            foreach (var product
+                in lowStock)
             {
                 try
                 {
