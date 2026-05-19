@@ -23,6 +23,7 @@ namespace ContosoCommerce.Reporting.Services
             ILogger<ReportService> _log;
         private readonly CommerceDbContext _db;
         private readonly IMemoryCache _cache;
+        private readonly ExportService _export;
 
         private const int ChartWidth = 800;
         private const int ChartHeight = 400;
@@ -31,10 +32,12 @@ namespace ContosoCommerce.Reporting.Services
         public ReportService(
             CommerceDbContext context,
             IMemoryCache cache,
+            ExportService export,
             ILogger<ReportService> logger)
         {
             _db = context;
             _cache = cache;
+            _export = export;
             _log = logger;
         }
 
@@ -339,9 +342,7 @@ namespace ContosoCommerce.Reporting.Services
                     GenerateSalesReportAsync(
                         startDate, endDate);
 
-            var exporter =
-                new ExportService();
-            return exporter
+            return _export
                 .ExportSalesReportToCsv(
                     report);
         }
@@ -353,9 +354,7 @@ namespace ContosoCommerce.Reporting.Services
                 await
                     GenerateInventoryReportAsync();
 
-            var exporter =
-                new ExportService();
-            return exporter
+            return _export
                 .ExportInventoryReportToCsv(
                     report);
         }
