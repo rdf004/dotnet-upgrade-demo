@@ -1,95 +1,117 @@
 using System;
 using System.Globalization;
-using System.Threading;
-using System.Web.Http.Controllers;
-using System.Web.Http.ModelBinding;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace ContosoCommerce.Api.ModelBinders
 {
-    /// <summary>
-    /// Custom model binder for DateTime parsing.
-    /// Uses Thread.CurrentThread.CurrentCulture
-    /// for culture-aware date parsing (a pattern
-    /// that is problematic in .NET 8).
-    /// </summary>
     public class DateTimeModelBinder
         : IModelBinder
     {
         private static readonly string[]
-            Formats = new[]
+            Formats =
             {
                 "yyyy-MM-dd",
                 "yyyy-MM-ddTHH:mm:ss",
                 "yyyy-MM-ddTHH:mm:ssZ",
                 "MM/dd/yyyy",
-                "dd/MM/yyyy",
+                "MM/dd/yyyy HH:mm:ss",
+                "dd-MMM-yyyy",
                 "yyyy-MM-dd HH:mm:ss"
             };
 
-        public bool BindModel(
-            HttpActionContext actionContext,
-            ModelBindingContext bindingContext)
+        public Task BindModelAsync(
+            ModelBindingContext context)
         {
-            if (bindingContext == null)
+            if (context == null)
             {
-                throw new ArgumentNullException(
-                    "bindingContext");
+                throw
+                    new ArgumentNullException(
+                        nameof(context));
             }
 
-            var valueResult = bindingContext
-                .ValueProvider
-                .GetValue(
-                    bindingContext.ModelName);
+            var modelName =
+                context.ModelName;
+            var valueResult =
+                context.ValueProvider
+                    .GetValue(modelName);
 
-            if (valueResult == null)
+            if (valueResult
+                == ValueProviderResult.None)
             {
-                return false;
+                return Task.CompletedTask;
             }
 
-            var rawValue =
-                valueResult.RawValue
-                    as string;
+            context.ModelState.SetModelValue(
+                modelName, valueResult);
 
-            if (string.IsNullOrWhiteSpace(
-                rawValue))
+            var value =
+                valueResult.FirstValue;
+            if (string.IsNullOrEmpty(value))
             {
-                return false;
+                return Task.CompletedTask;
             }
 
-            var culture = Thread
-                .CurrentThread
-                .CurrentCulture;
-
-            DateTime result;
             if (DateTime.TryParseExact(
-                rawValue,
-                Formats,
-                culture,
+                value, Formats,
+                CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
-                out result))
+                out var parsed))
             {
-                bindingContext.Model = result;
-                return true;
+                context.Result =
+                    ModelBindingResult
+                        .Success(parsed);
+                return Task.CompletedTask;
             }
 
             if (DateTime.TryParse(
-                rawValue,
-                culture,
-                DateTimeStyles.None,
-                out result))
+                value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles
+                    .AdjustToUniversal,
+                out var fallback))
             {
-                bindingContext.Model = result;
-                return true;
+                context.Result =
+                    ModelBindingResult
+                        .Success(fallback);
+                return Task.CompletedTask;
             }
 
-            bindingContext.ModelState
-                .AddModelError(
-                    bindingContext.ModelName,
+            context.ModelState
+                .TryAddModelError(
+                    modelName,
                     string.Format(
-                        "Cannot parse '{0}' "
-                        + "as a date.",
-                        rawValue));
-            return false;
+                        "Cannot convert"
+                        + " '{0}' to DateTime",
+                        value));
+
+            return Task.CompletedTask;
+        }
+    }
+
+    public class DateTimeModelBinderProvider
+        : IModelBinderProvider
+    {
+        public IModelBinder GetBinder(
+            ModelBinderProviderContext context)
+        {
+            if (context == null)
+            {
+                throw
+                    new ArgumentNullException(
+                        nameof(context));
+            }
+
+            if (context.Metadata.ModelType
+                == typeof(DateTime)
+                || context.Metadata.ModelType
+                    == typeof(DateTime?))
+            {
+                return
+                    new DateTimeModelBinder();
+            }
+
+            return null;
         }
     }
 }

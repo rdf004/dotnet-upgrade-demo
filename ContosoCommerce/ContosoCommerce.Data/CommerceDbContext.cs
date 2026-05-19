@@ -1,26 +1,21 @@
-using System.Data.Entity;
+using Microsoft.EntityFrameworkCore;
 using ContosoCommerce.Data.Entities;
 
 namespace ContosoCommerce.Data
 {
-    /// <summary>
-    /// Shared EF6 context used by all modules.
-    /// Contains DbSets for every entity in the
-    /// system. This tight coupling is a key
-    /// migration challenge.
-    /// </summary>
     public class CommerceDbContext : DbContext
     {
-        public CommerceDbContext()
-            : base("name=CommerceDb")
+        public CommerceDbContext(
+            DbContextOptions<CommerceDbContext>
+                options)
+            : base(options)
         {
-            Configuration.LazyLoadingEnabled =
-                true;
-            Configuration
-                .ProxyCreationEnabled = true;
         }
 
-        public DbSet<User> Users { get; set; }
+        public DbSet<User> Users
+        {
+            get; set;
+        }
 
         public DbSet<AuthToken> AuthTokens
         {
@@ -37,7 +32,10 @@ namespace ContosoCommerce.Data
             get; set;
         }
 
-        public DbSet<Order> Orders { get; set; }
+        public DbSet<Order> Orders
+        {
+            get; set;
+        }
 
         public DbSet<OrderItem> OrderItems
         {
@@ -55,39 +53,58 @@ namespace ContosoCommerce.Data
         }
 
         protected override void OnModelCreating(
-            DbModelBuilder modelBuilder)
+            ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Category>()
-                .HasOptional(c => c.ParentCategory)
+                .HasOne(c => c.ParentCategory)
                 .WithMany(c => c.SubCategories)
                 .HasForeignKey(
-                    c => c.ParentCategoryId);
+                    c => c.ParentCategoryId)
+                .IsRequired(false);
 
             modelBuilder.Entity<Order>()
                 .HasMany(o => o.Items)
-                .WithRequired(i => i.Order)
+                .WithOne(i => i.Order)
                 .HasForeignKey(i => i.OrderId)
-                .WillCascadeOnDelete(true);
+                .OnDelete(
+                    DeleteBehavior.Cascade);
 
             modelBuilder.Entity<OrderItem>()
-                .HasRequired(i => i.Product)
+                .HasOne(i => i.Product)
                 .WithMany()
-                .HasForeignKey(i => i.ProductId)
-                .WillCascadeOnDelete(false);
+                .HasForeignKey(
+                    i => i.ProductId)
+                .OnDelete(
+                    DeleteBehavior.Restrict);
 
             modelBuilder.Entity<AuthToken>()
-                .HasRequired(t => t.User)
+                .HasOne(t => t.User)
                 .WithMany()
                 .HasForeignKey(t => t.UserId)
-                .WillCascadeOnDelete(true);
+                .OnDelete(
+                    DeleteBehavior.Cascade);
 
             modelBuilder.Entity<Payment>()
-                .HasRequired(p => p.Order)
+                .HasOne(p => p.Order)
                 .WithMany()
                 .HasForeignKey(p => p.OrderId)
-                .WillCascadeOnDelete(false);
+                .OnDelete(
+                    DeleteBehavior.Restrict);
 
-            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<AuthToken>()
+                .HasIndex(t => t.Token)
+                .IsUnique();
+
+            modelBuilder.Entity<User>()
+                .HasIndex(u => u.Email)
+                .IsUnique();
+
+            modelBuilder.Entity<Product>()
+                .HasIndex(p => p.Sku)
+                .IsUnique();
+
+            base.OnModelCreating(
+                modelBuilder);
         }
     }
 }

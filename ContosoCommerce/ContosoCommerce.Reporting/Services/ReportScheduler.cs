@@ -1,111 +1,100 @@
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using ContosoCommerce.Core.Interfaces;
-using ContosoCommerce.Data;
-using log4net;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Reporting.Services
 {
-    /// <summary>
-    /// Pre-generates daily reports using
-    /// System.Threading.Timer. In .NET 8 this
-    /// should be replaced with IHostedService
-    /// and BackgroundService.
-    /// </summary>
-    public class ReportScheduler : IDisposable
+    public class ReportSchedulerWorker
+        : BackgroundService
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(ReportScheduler));
-
-        private Timer _timer;
-        private bool _disposed;
+        private readonly
+            ILogger<ReportSchedulerWorker>
+            _log;
+        private readonly
+            IServiceScopeFactory
+            _scopeFactory;
         private readonly TimeSpan _interval;
 
-        public ReportScheduler(
+        public ReportSchedulerWorker(
+            IServiceScopeFactory scopeFactory,
+            ILogger<ReportSchedulerWorker>
+                logger,
             TimeSpan? interval = null)
         {
+            _scopeFactory = scopeFactory;
+            _log = logger;
             _interval = interval
                 ?? TimeSpan.FromHours(1);
         }
 
-        public void Start()
+        protected override async Task
+            ExecuteAsync(
+                CancellationToken
+                    stoppingToken)
         {
-            Log.InfoFormat(
-                "Report scheduler starting. "
-                + "Interval: {0}",
+            _log.LogInformation(
+                "Report scheduler starting."
+                + " Interval: {Interval}",
                 _interval);
 
-            _timer = new Timer(
-                GenerateReports,
-                null,
-                TimeSpan.Zero,
-                _interval);
-        }
-
-        public void Stop()
-        {
-            Log.Info(
-                "Report scheduler stopping.");
-            _timer?.Change(
-                Timeout.Infinite,
-                Timeout.Infinite);
-        }
-
-        private void GenerateReports(
-            object state)
-        {
-            try
+            while (!stoppingToken
+                .IsCancellationRequested)
             {
-                Log.Info(
-                    "Scheduled report "
-                    + "generation starting.");
-
-                using (var db =
-                    new CommerceDbContext())
+                try
                 {
-                    var svc =
-                        new ReportService(db);
-
-                    var endDate =
-                        DateTime.UtcNow;
-                    var startDate =
-                        endDate.AddDays(-30);
-
-                    svc.GetSalesReportAsync(
-                        startDate, endDate)
-                        .Wait();
-
-                    svc
-                        .GetInventoryReportAsync()
-                        .Wait();
-
-                    svc
-                        .GetUserActivityReportAsync(
-                            startDate, endDate)
-                        .Wait();
+                    await GenerateReports();
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(
+                        ex,
+                        "Scheduled report"
+                        + " generation failed");
                 }
 
-                Log.Info(
-                    "Scheduled reports "
-                    + "generated and cached.");
+                await Task.Delay(
+                    _interval,
+                    stoppingToken);
             }
-            catch (Exception ex)
-            {
-                Log.Error(
-                    "Scheduled report "
-                    + "generation failed",
-                    ex);
-            }
+
+            _log.LogInformation(
+                "Report scheduler"
+                + " stopping.");
         }
 
-        public void Dispose()
+        private async Task
+            GenerateReports()
         {
-            if (!_disposed)
-            {
-                _timer?.Dispose();
-                _disposed = true;
-            }
+            _log.LogInformation(
+                "Scheduled report"
+                + " generation starting.");
+
+            using var scope =
+                _scopeFactory.CreateScope();
+            var svc = scope.ServiceProvider
+                .GetRequiredService<
+                    IReportService>();
+
+            var endDate = DateTime.UtcNow;
+            var startDate =
+                endDate.AddDays(-30);
+
+            await svc
+                .GenerateSalesReportAsync(
+                    startDate, endDate);
+            await svc
+                .GenerateInventoryReportAsync();
+            await svc
+                .GetUserActivityReportAsync(
+                    startDate, endDate);
+
+            _log.LogInformation(
+                "Scheduled reports"
+                + " generated and cached.");
         }
     }
 }

@@ -1,54 +1,52 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
-using System.Web.Security;
 using ContosoCommerce.Core.Enums;
 using ContosoCommerce.Core.Exceptions;
 using ContosoCommerce.Core.Interfaces;
 using ContosoCommerce.Data;
 using ContosoCommerce.Data.Entities;
 using ContosoCommerce.Users.Repositories;
-using log4net;
+using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Users.Services
 {
-    /// <summary>
-    /// Manages user CRUD and authentication.
-    /// Uses the deprecated FormsAuthentication
-    /// API for password hashing. This is a key
-    /// migration target for .NET 8.
-    /// </summary>
     public class UserService : IUserService
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(UserService));
-
+        private readonly ILogger<UserService>
+            _log;
         private readonly UserRepository _repo;
         private readonly IAuditService _audit;
         private readonly CommerceDbContext _db;
 
         public UserService(
             CommerceDbContext context,
-            IAuditService auditService)
+            IAuditService auditService,
+            ILogger<UserService> logger)
         {
             _db = context;
-            _repo = new UserRepository(context);
+            _repo =
+                new UserRepository(context);
             _audit = auditService;
+            _log = logger;
         }
 
-        public async Task<UserDto> GetUserAsync(
-            int userId)
+        public async Task<UserDto>
+            GetUserAsync(int userId)
         {
-            Log.DebugFormat(
-                "Getting user {0}", userId);
+            _log.LogDebug(
+                "Getting user {Id}", userId);
 
-            var user = _repo.FindById(userId);
+            var user =
+                _repo.FindById(userId);
             if (user == null)
             {
-                throw new EntityNotFoundException(
-                    "User", userId);
+                throw
+                    new EntityNotFoundException(
+                        "User", userId);
             }
             return MapToDto(user);
         }
@@ -68,18 +66,20 @@ namespace ContosoCommerce.Users.Services
             CreateUserAsync(
                 CreateUserRequest request)
         {
-            Log.InfoFormat(
-                "Creating user: {0}",
+            _log.LogInformation(
+                "Creating user: {Email}",
                 request.Email);
 
             var existing = _repo
                 .FindByEmail(request.Email);
             if (existing != null)
             {
-                throw new BusinessRuleException(
-                    "DuplicateEmail",
-                    "A user with this email "
-                    + "already exists.");
+                throw
+                    new BusinessRuleException(
+                        "DuplicateEmail",
+                        "A user with this"
+                        + " email already"
+                        + " exists.");
             }
 
             var user = new User
@@ -88,8 +88,10 @@ namespace ContosoCommerce.Users.Services
                 PasswordHash =
                     HashPassword(
                         request.Password),
-                FirstName = request.FirstName,
-                LastName = request.LastName,
+                FirstName =
+                    request.FirstName,
+                LastName =
+                    request.LastName,
                 Role = request.Role,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
@@ -112,14 +114,17 @@ namespace ContosoCommerce.Users.Services
                 int userId,
                 UpdateUserRequest request)
         {
-            Log.InfoFormat(
-                "Updating user {0}", userId);
+            _log.LogInformation(
+                "Updating user {Id}",
+                userId);
 
-            var user = _repo.FindById(userId);
+            var user =
+                _repo.FindById(userId);
             if (user == null)
             {
-                throw new EntityNotFoundException(
-                    "User", userId);
+                throw
+                    new EntityNotFoundException(
+                        "User", userId);
             }
 
             if (!string.IsNullOrEmpty(
@@ -162,14 +167,17 @@ namespace ContosoCommerce.Users.Services
         public async Task DeleteUserAsync(
             int userId)
         {
-            Log.InfoFormat(
-                "Deleting user {0}", userId);
+            _log.LogInformation(
+                "Deleting user {Id}",
+                userId);
 
-            var user = _repo.FindById(userId);
+            var user =
+                _repo.FindById(userId);
             if (user == null)
             {
-                throw new EntityNotFoundException(
-                    "User", userId);
+                throw
+                    new EntityNotFoundException(
+                        "User", userId);
             }
 
             user.IsActive = false;
@@ -186,10 +194,12 @@ namespace ContosoCommerce.Users.Services
 
         public async Task<AuthResult>
             AuthenticateAsync(
-                string email, string password)
+                string email,
+                string password)
         {
-            Log.InfoFormat(
-                "Auth attempt for {0}", email);
+            _log.LogInformation(
+                "Auth attempt for {Email}",
+                email);
 
             var user =
                 _repo.FindByEmail(email);
@@ -203,12 +213,12 @@ namespace ContosoCommerce.Users.Services
                 };
             }
 
-            var hash =
-                HashPassword(password);
-            if (user.PasswordHash != hash)
+            if (!VerifyPassword(
+                password,
+                user.PasswordHash))
             {
-                Log.WarnFormat(
-                    "Failed login for {0}",
+                _log.LogWarning(
+                    "Failed login for {Email}",
                     email);
                 return new AuthResult
                 {
@@ -237,8 +247,8 @@ namespace ContosoCommerce.Users.Services
             await _repo
                 .CreateTokenAsync(authToken);
 
-            Log.InfoFormat(
-                "User {0} authenticated",
+            _log.LogInformation(
+                "User {Email} authenticated",
                 email);
 
             return new AuthResult
@@ -281,15 +291,26 @@ namespace ContosoCommerce.Users.Services
             return await _repo.CountAsync();
         }
 
-        #pragma warning disable 618
-        private static string HashPassword(
+        internal static string HashPassword(
             string password)
         {
-            return FormsAuthentication
-                .HashPasswordForStoringInConfigFile(
-                    password, "SHA256");
+            using var sha = SHA256.Create();
+            var bytes = sha.ComputeHash(
+                Encoding.UTF8.GetBytes(
+                    password));
+            return Convert
+                .ToHexString(bytes);
         }
-        #pragma warning restore 618
+
+        internal static bool VerifyPassword(
+            string password, string stored)
+        {
+            var hash = HashPassword(password);
+            return string.Equals(
+                hash, stored,
+                StringComparison
+                    .OrdinalIgnoreCase);
+        }
 
         private static UserDto MapToDto(
             User user)

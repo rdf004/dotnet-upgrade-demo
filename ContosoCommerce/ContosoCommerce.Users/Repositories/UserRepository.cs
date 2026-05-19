@@ -1,18 +1,12 @@
 using System.Collections.Generic;
-using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
 using ContosoCommerce.Data;
 using ContosoCommerce.Data.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace ContosoCommerce.Users.Repositories
 {
-    /// <summary>
-    /// Data access for User entities. Uses raw
-    /// SQL queries via Database.SqlQuery for
-    /// "performance-critical" lookups (a pattern
-    /// that needs updating in EF Core).
-    /// </summary>
     public class UserRepository
     {
         private readonly CommerceDbContext _db;
@@ -23,40 +17,38 @@ namespace ContosoCommerce.Users.Repositories
             _db = context;
         }
 
-        /// <summary>
-        /// Uses raw SQL for fast email lookup.
-        /// </summary>
         public User FindByEmail(string email)
         {
-            var sql =
-                "SELECT * FROM Users "
-                + "WHERE Email = @p0 "
-                + "AND IsActive = 1";
-            return _db.Database
-                .SqlQuery<User>(sql, email)
+            return _db.Users
+                .FromSqlRaw(
+                    "SELECT * FROM Users"
+                    + " WHERE Email = {0}"
+                    + " AND IsActive = 1",
+                    email)
+                .AsEnumerable()
                 .FirstOrDefault();
         }
 
-        /// <summary>
-        /// Uses raw SQL for fast ID lookup.
-        /// </summary>
         public User FindById(int id)
         {
-            var sql =
-                "SELECT * FROM Users "
-                + "WHERE Id = @p0";
-            return _db.Database
-                .SqlQuery<User>(sql, id)
+            return _db.Users
+                .FromSqlRaw(
+                    "SELECT * FROM Users"
+                    + " WHERE Id = {0}",
+                    id)
+                .AsEnumerable()
                 .FirstOrDefault();
         }
 
         public async Task<List<User>>
-            GetAllAsync(int page, int pageSize)
+            GetAllAsync(
+                int page, int pageSize)
         {
             return await _db.Users
                 .Where(u => u.IsActive)
                 .OrderBy(u => u.Id)
-                .Skip((page - 1) * pageSize)
+                .Skip(
+                    (page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
         }
@@ -75,7 +67,8 @@ namespace ContosoCommerce.Users.Repositories
             return user;
         }
 
-        public async Task UpdateAsync(User user)
+        public async Task UpdateAsync(
+            User user)
         {
             _db.Entry(user).State =
                 EntityState.Modified;
@@ -91,7 +84,8 @@ namespace ContosoCommerce.Users.Repositories
         }
 
         public async Task<AuthToken>
-            FindTokenAsync(string tokenValue)
+            FindTokenAsync(
+                string tokenValue)
         {
             return await _db.AuthTokens
                 .Include(t => t.User)

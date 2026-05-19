@@ -1,51 +1,47 @@
 using System;
 using System.Collections.Generic;
-using System.Data.Entity;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Web;
 using ContosoCommerce.Core.Enums;
 using ContosoCommerce.Core.Exceptions;
 using ContosoCommerce.Core.Interfaces;
 using ContosoCommerce.Data;
 using ContosoCommerce.Data.Entities;
-using log4net;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
 
 namespace ContosoCommerce.Inventory.Services
 {
-    /// <summary>
-    /// Manages products and stock levels. Uses
-    /// System.Drawing for image thumbnails (a
-    /// platform-specific API that must be replaced
-    /// with ImageSharp in .NET 8). Accesses
-    /// HttpContext.Current for request context.
-    /// </summary>
     public class InventoryService
         : IInventoryService
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(InventoryService));
-
+        private readonly
+            ILogger<InventoryService> _log;
         private readonly CommerceDbContext _db;
         private readonly IAuditService _audit;
         private readonly IUserService _users;
+        private readonly
+            IHttpContextAccessor _httpCtx;
 
         private const int ThumbWidth = 150;
         private const int ThumbHeight = 150;
-        private const int LowStockThreshold = 10;
 
         public InventoryService(
             CommerceDbContext context,
             IAuditService auditService,
-            IUserService userService)
+            IUserService userService,
+            IHttpContextAccessor httpCtx,
+            ILogger<InventoryService> log)
         {
             _db = context;
             _audit = auditService;
             _users = userService;
+            _httpCtx = httpCtx;
+            _log = log;
         }
 
         public async Task<ProductDto>
@@ -58,8 +54,9 @@ namespace ContosoCommerce.Inventory.Services
 
             if (product == null)
             {
-                throw new EntityNotFoundException(
-                    "Product", productId);
+                throw
+                    new EntityNotFoundException(
+                        "Product", productId);
             }
             return MapToDto(product);
         }
@@ -82,7 +79,8 @@ namespace ContosoCommerce.Inventory.Services
 
             var products = await query
                 .OrderBy(p => p.Name)
-                .Skip((page - 1) * pageSize)
+                .Skip(
+                    (page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
 
@@ -93,37 +91,37 @@ namespace ContosoCommerce.Inventory.Services
 
         public async Task<ProductDto>
             CreateProductAsync(
-                CreateProductRequest request)
+                CreateProductRequest req)
         {
             ValidateManagerRole();
 
-            Log.InfoFormat(
-                "Creating product: {0}",
-                request.Name);
+            _log.LogInformation(
+                "Creating product: {Name}",
+                req.Name);
 
             var product = new Product
             {
-                Name = request.Name,
+                Name = req.Name,
                 Description =
-                    request.Description,
-                Price = request.Price,
+                    req.Description,
+                Price = req.Price,
                 StockQuantity =
-                    request.StockQuantity,
-                Sku = request.Sku,
+                    req.StockQuantity,
+                Sku = req.Sku,
                 CategoryId =
-                    request.CategoryId,
+                    req.CategoryId,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
 
-            if (request.ImageData != null
-                && request.ImageData.Length > 0)
+            if (req.ImageData != null
+                && req.ImageData.Length > 0)
             {
                 product.ImageData =
-                    request.ImageData;
+                    req.ImageData;
                 product.ThumbnailData =
                     GenerateThumbnail(
-                        request.ImageData);
+                        req.ImageData);
             }
 
             _db.Products.Add(product);
@@ -142,7 +140,7 @@ namespace ContosoCommerce.Inventory.Services
         public async Task<ProductDto>
             UpdateProductAsync(
                 int productId,
-                UpdateProductRequest request)
+                UpdateProductRequest req)
         {
             ValidateManagerRole();
 
@@ -150,40 +148,41 @@ namespace ContosoCommerce.Inventory.Services
                 .FindAsync(productId);
             if (product == null)
             {
-                throw new EntityNotFoundException(
-                    "Product", productId);
+                throw
+                    new EntityNotFoundException(
+                        "Product", productId);
             }
 
             if (!string.IsNullOrEmpty(
-                request.Name))
+                req.Name))
             {
-                product.Name = request.Name;
+                product.Name = req.Name;
             }
-            if (request.Description != null)
+            if (req.Description != null)
             {
                 product.Description =
-                    request.Description;
+                    req.Description;
             }
-            if (request.Price > 0)
+            if (req.Price > 0)
             {
-                product.Price = request.Price;
+                product.Price = req.Price;
             }
             if (!string.IsNullOrEmpty(
-                request.Sku))
+                req.Sku))
             {
-                product.Sku = request.Sku;
+                product.Sku = req.Sku;
             }
             product.CategoryId =
-                request.CategoryId;
+                req.CategoryId;
 
-            if (request.ImageData != null
-                && request.ImageData.Length > 0)
+            if (req.ImageData != null
+                && req.ImageData.Length > 0)
             {
                 product.ImageData =
-                    request.ImageData;
+                    req.ImageData;
                 product.ThumbnailData =
                     GenerateThumbnail(
-                        request.ImageData);
+                        req.ImageData);
             }
 
             product.UpdatedAt =
@@ -209,8 +208,9 @@ namespace ContosoCommerce.Inventory.Services
                 .FindAsync(productId);
             if (product == null)
             {
-                throw new EntityNotFoundException(
-                    "Product", productId);
+                throw
+                    new EntityNotFoundException(
+                        "Product", productId);
             }
 
             product.IsActive = false;
@@ -231,7 +231,8 @@ namespace ContosoCommerce.Inventory.Services
         {
             var categories = await _db
                 .Categories
-                .Include(c => c.ParentCategory)
+                .Include(
+                    c => c.ParentCategory)
                 .Include(c => c.Products)
                 .ToListAsync();
 
@@ -245,7 +246,8 @@ namespace ContosoCommerce.Inventory.Services
                     ParentCategoryId =
                         c.ParentCategoryId,
                     ParentCategoryName =
-                        c.ParentCategory != null
+                        c.ParentCategory
+                            != null
                             ? c.ParentCategory
                                 .Name
                             : null,
@@ -256,64 +258,69 @@ namespace ContosoCommerce.Inventory.Services
 
         public async Task<CategoryDto>
             CreateCategoryAsync(
-                CreateCategoryRequest request)
+                CreateCategoryRequest req)
         {
             ValidateManagerRole();
 
-            var category = new Category
+            var cat = new Category
             {
-                Name = request.Name,
+                Name = req.Name,
                 Description =
-                    request.Description,
+                    req.Description,
                 ParentCategoryId =
-                    request.ParentCategoryId
+                    req.ParentCategoryId
             };
 
-            _db.Categories.Add(category);
+            _db.Categories.Add(cat);
             await _db.SaveChangesAsync();
 
             return new CategoryDto
             {
-                Id = category.Id,
-                Name = category.Name,
+                Id = cat.Id,
+                Name = cat.Name,
                 Description =
-                    category.Description,
+                    cat.Description,
                 ParentCategoryId =
-                    category.ParentCategoryId,
+                    cat.ParentCategoryId,
                 ProductCount = 0
             };
         }
 
         public async Task<bool>
             ReserveStockAsync(
-                int productId, int quantity)
+                int productId,
+                int quantity)
         {
             var product = await _db.Products
                 .FindAsync(productId);
             if (product == null)
             {
-                throw new EntityNotFoundException(
-                    "Product", productId);
+                throw
+                    new EntityNotFoundException(
+                        "Product", productId);
             }
 
             if (product.StockQuantity
                 < quantity)
             {
-                Log.WarnFormat(
-                    "Insufficient stock for "
-                    + "product {0}: have {1}, "
-                    + "need {2}",
+                _log.LogWarning(
+                    "Insufficient stock"
+                    + " for {Id}:"
+                    + " have {Have},"
+                    + " need {Need}",
                     productId,
                     product.StockQuantity,
                     quantity);
                 return false;
             }
 
-            product.StockQuantity -= quantity;
+            product.StockQuantity
+                -= quantity;
             await _db.SaveChangesAsync();
 
-            Log.InfoFormat(
-                "Reserved {0} of product {1}",
+            _log.LogInformation(
+                "Reserved {Qty}"
+                + " of product {Id}",
                 quantity, productId);
             return true;
         }
@@ -325,23 +332,27 @@ namespace ContosoCommerce.Inventory.Services
                 .FindAsync(productId);
             if (product == null)
             {
-                throw new EntityNotFoundException(
-                    "Product", productId);
+                throw
+                    new EntityNotFoundException(
+                        "Product", productId);
             }
 
-            product.StockQuantity += quantity;
+            product.StockQuantity
+                += quantity;
             await _db.SaveChangesAsync();
         }
 
         public async Task<StockLevel>
-            GetStockLevelAsync(int productId)
+            GetStockLevelAsync(
+                int productId)
         {
             var product = await _db.Products
                 .FindAsync(productId);
             if (product == null)
             {
-                throw new EntityNotFoundException(
-                    "Product", productId);
+                throw
+                    new EntityNotFoundException(
+                        "Product", productId);
             }
             return ClassifyStockLevel(
                 product.StockQuantity);
@@ -356,8 +367,9 @@ namespace ContosoCommerce.Inventory.Services
                 .FindAsync(productId);
             if (product == null)
             {
-                throw new EntityNotFoundException(
-                    "Product", productId);
+                throw
+                    new EntityNotFoundException(
+                        "Product", productId);
             }
 
             var oldQty =
@@ -370,8 +382,8 @@ namespace ContosoCommerce.Inventory.Services
                 "Product", productId,
                 "StockAdjust",
                 string.Format(
-                    "Stock changed from {0} "
-                    + "to {1}",
+                    "Stock changed"
+                    + " from {0} to {1}",
                     oldQty, newQuantity));
         }
 
@@ -408,59 +420,42 @@ namespace ContosoCommerce.Inventory.Services
                 .FindAsync(productId);
             if (product == null)
             {
-                throw new EntityNotFoundException(
-                    "Product", productId);
+                throw
+                    new EntityNotFoundException(
+                        "Product", productId);
             }
             return product.ThumbnailData
                 ?? product.ImageData;
         }
 
-        /// <summary>
-        /// Generates a thumbnail using
-        /// System.Drawing (Windows-only API).
-        /// </summary>
         private byte[] GenerateThumbnail(
             byte[] imageData)
         {
             try
             {
-                using (var ms =
-                    new MemoryStream(imageData))
-                using (var original =
-                    Image.FromStream(ms))
-                using (var thumb =
-                    original
-                        .GetThumbnailImage(
-                            ThumbWidth,
-                            ThumbHeight,
-                            null,
-                            IntPtr.Zero))
-                using (var output =
-                    new MemoryStream())
-                {
-                    thumb.Save(
-                        output,
-                        ImageFormat.Png);
-                    return output.ToArray();
-                }
+                using var img =
+                    Image.Load(imageData);
+                img.Mutate(x => x.Resize(
+                    ThumbWidth, ThumbHeight));
+                using var ms =
+                    new MemoryStream();
+                img.SaveAsPng(ms);
+                return ms.ToArray();
             }
             catch (Exception ex)
             {
-                Log.Error(
-                    "Thumbnail generation "
-                    + "failed", ex);
+                _log.LogError(
+                    ex,
+                    "Thumbnail generation"
+                    + " failed");
                 return null;
             }
         }
 
-        /// <summary>
-        /// Validates the requesting user has the
-        /// InventoryManager role by reading
-        /// HttpContext.Current.
-        /// </summary>
         private void ValidateManagerRole()
         {
-            var ctx = HttpContext.Current;
+            var ctx =
+                _httpCtx.HttpContext;
             if (ctx == null) return;
 
             var userIdObj =
@@ -471,28 +466,32 @@ namespace ContosoCommerce.Inventory.Services
             var hasRole = _users
                 .HasRoleAsync(
                     userId,
-                    UserRole.InventoryManager)
+                    UserRole
+                        .InventoryManager)
                 .Result;
 
             if (!hasRole)
             {
-                throw new BusinessRuleException(
-                    "InsufficientRole",
-                    "User does not have the "
-                    + "InventoryManager role.");
+                throw
+                    new BusinessRuleException(
+                        "InsufficientRole",
+                        "User does not have"
+                        + " the"
+                        + " InventoryManager"
+                        + " role.");
             }
         }
 
         private static StockLevel
-            ClassifyStockLevel(int quantity)
+            ClassifyStockLevel(int qty)
         {
-            if (quantity <= 0)
+            if (qty <= 0)
                 return StockLevel.OutOfStock;
-            if (quantity <= 5)
+            if (qty <= 5)
                 return StockLevel.Critical;
-            if (quantity <= 10)
+            if (qty <= 10)
                 return StockLevel.Low;
-            if (quantity <= 500)
+            if (qty <= 500)
                 return StockLevel.Normal;
             return StockLevel.Overstocked;
         }
@@ -504,7 +503,8 @@ namespace ContosoCommerce.Inventory.Services
             {
                 Id = p.Id,
                 Name = p.Name,
-                Description = p.Description,
+                Description =
+                    p.Description,
                 Price = p.Price,
                 StockQuantity =
                     p.StockQuantity,

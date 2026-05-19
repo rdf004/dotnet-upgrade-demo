@@ -1,55 +1,45 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
-using System.Web.Http;
 using ContosoCommerce.Core.DTOs;
 using ContosoCommerce.Core.Interfaces;
-using ContosoCommerce.Users.Filters;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace ContosoCommerce.Inventory.Controllers
 {
-    /// <summary>
-    /// CRUD for hierarchical product categories.
-    /// </summary>
-    [TokenAuthorize]
-    [RoutePrefix("api/categories")]
+    [Authorize]
+    [ApiController]
+    [Route("api/categories")]
     public class CategoriesController
-        : ApiController
+        : ControllerBase
     {
-        private readonly IInventoryService _svc;
+        private readonly
+            IInventoryService _svc;
 
         public CategoriesController(
-            IInventoryService inventoryService)
+            IInventoryService svc)
         {
-            _svc = inventoryService;
+            _svc = svc;
         }
 
-        /// <summary>
-        /// GET api/categories
-        /// </summary>
-        [HttpGet]
-        [Route("")]
-        public async Task<IHttpActionResult>
+        [HttpGet("")]
+        public async Task<IActionResult>
             GetAll()
         {
             var categories = await _svc
                 .GetCategoriesAsync();
             return Ok(
                 ApiResponse<
-                    System.Collections.Generic
-                        .IList<CategoryDto>>
+                    IList<CategoryDto>>
                     .Ok(categories));
         }
 
-        /// <summary>
-        /// POST api/categories
-        /// </summary>
-        [HttpPost]
-        [Route("")]
-        public async Task<IHttpActionResult>
+        [HttpPost("")]
+        public async Task<IActionResult>
             Create(
                 CreateCategoryRequest request)
         {
-            if (request == null
-                || !ModelState.IsValid)
+            if (!ModelState.IsValid)
             {
                 return BadRequest(
                     ModelState);

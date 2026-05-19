@@ -1,45 +1,38 @@
 using System.Threading.Tasks;
-using System.Web.Http;
 using ContosoCommerce.Core.DTOs;
 using ContosoCommerce.Core.Exceptions;
 using ContosoCommerce.Core.Interfaces;
-using ContosoCommerce.Users.Filters;
-using log4net;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Orders.Controllers
 {
-    /// <summary>
-    /// Mock payment processing endpoint.
-    /// </summary>
-    [TokenAuthorize]
-    [RoutePrefix("api/payments")]
+    [Authorize]
+    [ApiController]
+    [Route("api/payments")]
     public class PaymentsController
-        : ApiController
+        : ControllerBase
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(PaymentsController));
-
+        private readonly
+            ILogger<PaymentsController> _log;
         private readonly IOrderService _svc;
 
         public PaymentsController(
-            IOrderService orderService)
+            IOrderService orderService,
+            ILogger<PaymentsController> log)
         {
             _svc = orderService;
+            _log = log;
         }
 
-        /// <summary>
-        /// POST api/payments/order/5
-        /// </summary>
-        [HttpPost]
-        [Route("order/{orderId:int}")]
-        public async Task<IHttpActionResult>
+        [HttpPost("order/{orderId:int}")]
+        public async Task<IActionResult>
             ProcessPayment(
                 int orderId,
                 PaymentRequest request)
         {
-            if (request == null
-                || !ModelState.IsValid)
+            if (!ModelState.IsValid)
             {
                 return BadRequest(
                     ModelState);
@@ -61,8 +54,8 @@ namespace ContosoCommerce.Orders.Controllers
                     ApiResponse<
                         PaymentResultDto>
                         .Ok(result,
-                            "Payment "
-                            + "processed."));
+                            "Payment"
+                            + " processed."));
             }
             catch (EntityNotFoundException)
             {

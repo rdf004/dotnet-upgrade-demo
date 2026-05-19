@@ -1,40 +1,34 @@
 using System.Threading.Tasks;
-using System.Web.Http;
 using ContosoCommerce.Core.DTOs;
 using ContosoCommerce.Core.Exceptions;
 using ContosoCommerce.Core.Interfaces;
-using ContosoCommerce.Users.Filters;
-using log4net;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Inventory.Controllers
 {
-    /// <summary>
-    /// CRUD for products with image upload.
-    /// Stores images as byte[] in the database.
-    /// </summary>
-    [TokenAuthorize]
-    [RoutePrefix("api/products")]
+    [Authorize]
+    [ApiController]
+    [Route("api/products")]
     public class ProductsController
-        : ApiController
+        : ControllerBase
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(ProductsController));
-
-        private readonly IInventoryService _svc;
+        private readonly
+            ILogger<ProductsController> _log;
+        private readonly
+            IInventoryService _svc;
 
         public ProductsController(
-            IInventoryService inventoryService)
+            IInventoryService svc,
+            ILogger<ProductsController> log)
         {
-            _svc = inventoryService;
+            _svc = svc;
+            _log = log;
         }
 
-        /// <summary>
-        /// GET api/products
-        /// </summary>
-        [HttpGet]
-        [Route("")]
-        public async Task<IHttpActionResult>
+        [HttpGet("")]
+        public async Task<IActionResult>
             GetAll(
                 int page = 1,
                 int pageSize = 10,
@@ -62,12 +56,8 @@ namespace ContosoCommerce.Inventory.Controllers
                     .Ok(result));
         }
 
-        /// <summary>
-        /// GET api/products/5
-        /// </summary>
-        [HttpGet]
-        [Route("{id:int}")]
-        public async Task<IHttpActionResult>
+        [HttpGet("{id:int}")]
+        public async Task<IActionResult>
             Get(int id)
         {
             try
@@ -84,12 +74,8 @@ namespace ContosoCommerce.Inventory.Controllers
             }
         }
 
-        /// <summary>
-        /// GET api/products/5/image
-        /// </summary>
-        [HttpGet]
-        [Route("{id:int}/image")]
-        public async Task<IHttpActionResult>
+        [HttpGet("{id:int}/image")]
+        public async Task<IActionResult>
             GetImage(int id)
         {
             try
@@ -106,17 +92,12 @@ namespace ContosoCommerce.Inventory.Controllers
             }
         }
 
-        /// <summary>
-        /// POST api/products
-        /// </summary>
-        [HttpPost]
-        [Route("")]
-        public async Task<IHttpActionResult>
+        [HttpPost("")]
+        public async Task<IActionResult>
             Create(
                 CreateProductRequest request)
         {
-            if (request == null
-                || !ModelState.IsValid)
+            if (!ModelState.IsValid)
             {
                 return BadRequest(
                     ModelState);
@@ -125,14 +106,16 @@ namespace ContosoCommerce.Inventory.Controllers
             try
             {
                 var product = await _svc
-                    .CreateProductAsync(request);
+                    .CreateProductAsync(
+                        request);
                 return Created(
                     string.Format(
                         "api/products/{0}",
                         product.Id),
                     ApiResponse<ProductDto>
                         .Ok(product,
-                            "Product created."));
+                            "Product"
+                            + " created."));
             }
             catch (BusinessRuleException ex)
             {
@@ -141,18 +124,13 @@ namespace ContosoCommerce.Inventory.Controllers
             }
         }
 
-        /// <summary>
-        /// PUT api/products/5
-        /// </summary>
-        [HttpPut]
-        [Route("{id:int}")]
-        public async Task<IHttpActionResult>
+        [HttpPut("{id:int}")]
+        public async Task<IActionResult>
             Update(
                 int id,
                 UpdateProductRequest request)
         {
-            if (request == null
-                || !ModelState.IsValid)
+            if (!ModelState.IsValid)
             {
                 return BadRequest(
                     ModelState);
@@ -166,7 +144,8 @@ namespace ContosoCommerce.Inventory.Controllers
                 return Ok(
                     ApiResponse<ProductDto>
                         .Ok(product,
-                            "Product updated."));
+                            "Product"
+                            + " updated."));
             }
             catch (EntityNotFoundException)
             {
@@ -174,12 +153,8 @@ namespace ContosoCommerce.Inventory.Controllers
             }
         }
 
-        /// <summary>
-        /// DELETE api/products/5
-        /// </summary>
-        [HttpDelete]
-        [Route("{id:int}")]
-        public async Task<IHttpActionResult>
+        [HttpDelete("{id:int}")]
+        public async Task<IActionResult>
             Delete(int id)
         {
             try

@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using System.ComponentModel.DataAnnotations
+    .Schema;
 using ContosoCommerce.Core.Enums;
 
 namespace ContosoCommerce.Data.Entities
@@ -11,12 +12,12 @@ namespace ContosoCommerce.Data.Entities
     {
         [Key]
         [DatabaseGenerated(
-            DatabaseGeneratedOption.Identity)]
+            DatabaseGeneratedOption
+                .Identity)]
         public int Id { get; set; }
 
         [Required]
         [MaxLength(256)]
-        [Index(IsUnique = true)]
         public string Email { get; set; }
 
         [Required]

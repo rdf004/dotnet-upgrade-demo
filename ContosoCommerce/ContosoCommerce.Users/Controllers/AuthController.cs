@@ -1,38 +1,32 @@
 using System.Threading.Tasks;
-using System.Web.Http;
 using ContosoCommerce.Core.DTOs;
 using ContosoCommerce.Core.Interfaces;
-using log4net;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Users.Controllers
 {
-    /// <summary>
-    /// Authentication endpoint. Returns a
-    /// custom DB-stored token (not JWT).
-    /// </summary>
-    [RoutePrefix("api/auth")]
+    [ApiController]
+    [Route("api/auth")]
     public class AuthController
-        : ApiController
+        : ControllerBase
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(AuthController));
-
+        private readonly
+            ILogger<AuthController> _log;
         private readonly IUserService _svc;
 
         public AuthController(
-            IUserService userService)
+            IUserService userService,
+            ILogger<AuthController> logger)
         {
             _svc = userService;
+            _log = logger;
         }
 
-        /// <summary>
-        /// POST api/auth/login
-        /// </summary>
-        [HttpPost]
-        [Route("login")]
+        [HttpPost("login")]
         [AllowAnonymous]
-        public async Task<IHttpActionResult>
+        public async Task<IActionResult>
             Login(LoginRequest request)
         {
             if (request == null
@@ -42,12 +36,12 @@ namespace ContosoCommerce.Users.Controllers
                     request.Password))
             {
                 return BadRequest(
-                    "Email and password "
-                    + "are required.");
+                    "Email and password"
+                    + " are required.");
             }
 
-            Log.InfoFormat(
-                "Login attempt: {0}",
+            _log.LogInformation(
+                "Login attempt: {Email}",
                 request.Email);
 
             var result = await _svc
@@ -67,9 +61,6 @@ namespace ContosoCommerce.Users.Controllers
         }
     }
 
-    /// <summary>
-    /// Login request payload.
-    /// </summary>
     [System.Serializable]
     public class LoginRequest
     {

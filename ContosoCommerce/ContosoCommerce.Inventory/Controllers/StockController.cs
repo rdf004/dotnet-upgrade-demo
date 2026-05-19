@@ -1,35 +1,32 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
-using System.Web.Http;
 using ContosoCommerce.Core.DTOs;
 using ContosoCommerce.Core.Enums;
 using ContosoCommerce.Core.Exceptions;
 using ContosoCommerce.Core.Interfaces;
-using ContosoCommerce.Users.Filters;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace ContosoCommerce.Inventory.Controllers
 {
-    /// <summary>
-    /// Manages stock levels and alerts.
-    /// </summary>
-    [TokenAuthorize]
-    [RoutePrefix("api/stock")]
+    [Authorize]
+    [ApiController]
+    [Route("api/stock")]
     public class StockController
-        : ApiController
+        : ControllerBase
     {
-        private readonly IInventoryService _svc;
+        private readonly
+            IInventoryService _svc;
 
         public StockController(
-            IInventoryService inventoryService)
+            IInventoryService svc)
         {
-            _svc = inventoryService;
+            _svc = svc;
         }
 
-        /// <summary>
-        /// GET api/stock/5/level
-        /// </summary>
-        [HttpGet]
-        [Route("{productId:int}/level")]
-        public async Task<IHttpActionResult>
+        [HttpGet(
+            "{productId:int}/level")]
+        public async Task<IActionResult>
             GetLevel(int productId)
         {
             try
@@ -47,12 +44,9 @@ namespace ContosoCommerce.Inventory.Controllers
             }
         }
 
-        /// <summary>
-        /// PUT api/stock/5/adjust
-        /// </summary>
-        [HttpPut]
-        [Route("{productId:int}/adjust")]
-        public async Task<IHttpActionResult>
+        [HttpPut(
+            "{productId:int}/adjust")]
+        public async Task<IActionResult>
             Adjust(
                 int productId,
                 StockAdjustRequest request)
@@ -62,9 +56,10 @@ namespace ContosoCommerce.Inventory.Controllers
 
             try
             {
-                await _svc.AdjustStockAsync(
-                    productId,
-                    request.NewQuantity);
+                await _svc
+                    .AdjustStockAsync(
+                        productId,
+                        request.NewQuantity);
                 return Ok(
                     ApiResponse<string>.Ok(
                         null,
@@ -81,21 +76,17 @@ namespace ContosoCommerce.Inventory.Controllers
             }
         }
 
-        /// <summary>
-        /// GET api/stock/low?threshold=10
-        /// </summary>
-        [HttpGet]
-        [Route("low")]
-        public async Task<IHttpActionResult>
-            GetLowStock(int threshold = 10)
+        [HttpGet("low")]
+        public async Task<IActionResult>
+            GetLowStock(
+                int threshold = 10)
         {
             var products = await _svc
                 .GetLowStockProductsAsync(
                     threshold);
             return Ok(
                 ApiResponse<
-                    System.Collections.Generic
-                        .IList<ProductDto>>
+                    IList<ProductDto>>
                     .Ok(products));
         }
     }

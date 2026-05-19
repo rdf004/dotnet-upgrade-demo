@@ -1,137 +1,123 @@
 using System;
-using System.Data.Entity;
 using System.Linq;
-using System.Timers;
+using System.Threading;
+using System.Threading.Tasks;
 using ContosoCommerce.Core.Interfaces;
 using ContosoCommerce.Data;
-using log4net;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Inventory.Services
 {
-    /// <summary>
-    /// Background stock monitoring using
-    /// System.Timers.Timer. Runs on app start
-    /// via Global.asax. In .NET 8 this should
-    /// be replaced with IHostedService.
-    /// </summary>
-    public class StockMonitorService
-        : IDisposable
+    public class StockMonitorWorker
+        : BackgroundService
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(StockMonitorService));
-
-        private readonly Timer _timer;
-        private readonly INotificationService
-            _notifications;
+        private readonly
+            ILogger<StockMonitorWorker> _log;
+        private readonly
+            IServiceScopeFactory _scopeFactory;
         private readonly int _threshold;
-        private readonly double _intervalMs;
-        private bool _disposed;
+        private readonly TimeSpan _interval;
 
-        public StockMonitorService(
-            INotificationService notifications,
-            int lowStockThreshold = 10,
+        public StockMonitorWorker(
+            IServiceScopeFactory scopeFactory,
+            ILogger<StockMonitorWorker> log,
+            int threshold = 10,
             double intervalMinutes = 30)
         {
-            _notifications = notifications;
-            _threshold = lowStockThreshold;
-            _intervalMs =
-                intervalMinutes * 60 * 1000;
-            _timer = new Timer(_intervalMs);
-            _timer.Elapsed += OnTimerElapsed;
-            _timer.AutoReset = true;
+            _scopeFactory = scopeFactory;
+            _log = log;
+            _threshold = threshold;
+            _interval = TimeSpan
+                .FromMinutes(intervalMinutes);
         }
 
-        public void Start()
+        protected override async Task
+            ExecuteAsync(
+                CancellationToken stoppingToken)
         {
-            Log.Info(
-                "Stock monitor starting. "
-                + "Interval: "
-                + (_intervalMs / 60000)
-                + " min");
-            _timer.Start();
-            CheckStockLevels();
-        }
+            _log.LogInformation(
+                "Stock monitor starting."
+                + " Interval: {Interval}",
+                _interval);
 
-        public void Stop()
-        {
-            Log.Info(
-                "Stock monitor stopping.");
-            _timer.Stop();
-        }
-
-        private void OnTimerElapsed(
-            object sender, ElapsedEventArgs e)
-        {
-            try
+            while (!stoppingToken
+                .IsCancellationRequested)
             {
-                CheckStockLevels();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(
-                    "Stock check failed", ex);
-            }
-        }
-
-        private void CheckStockLevels()
-        {
-            Log.Debug(
-                "Running stock level check.");
-
-            using (var db =
-                new CommerceDbContext())
-            {
-                var lowStockProducts = db
-                    .Products
-                    .Where(p => p.IsActive
-                        && p.StockQuantity
-                            <= _threshold)
-                    .ToList();
-
-                Log.InfoFormat(
-                    "Found {0} low-stock "
-                    + "products",
-                    lowStockProducts.Count);
-
-                foreach (var product
-                    in lowStockProducts)
+                try
                 {
-                    try
-                    {
-                        _notifications
-                            .SendStockAlertAsync(
-                                product.Name,
-                                product
-                                    .StockQuantity,
-                                _threshold)
-                            .Wait();
+                    await CheckStockLevels();
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(
+                        ex,
+                        "Stock check failed");
+                }
 
-                        Log.WarnFormat(
-                            "Low stock alert: "
-                            + "{0} ({1} units)",
+                await Task.Delay(
+                    _interval,
+                    stoppingToken);
+            }
+
+            _log.LogInformation(
+                "Stock monitor stopping.");
+        }
+
+        private async Task CheckStockLevels()
+        {
+            _log.LogDebug(
+                "Running stock level check");
+
+            using var scope = _scopeFactory
+                .CreateScope();
+            var db = scope.ServiceProvider
+                .GetRequiredService<
+                    CommerceDbContext>();
+            var notify =
+                scope.ServiceProvider
+                    .GetRequiredService<
+                        INotificationService>();
+
+            var lowStock = await db.Products
+                .Where(p => p.IsActive
+                    && p.StockQuantity
+                        <= _threshold)
+                .ToListAsync();
+
+            _log.LogInformation(
+                "Found {Count}"
+                + " low-stock products",
+                lowStock.Count);
+
+            foreach (var product in lowStock)
+            {
+                try
+                {
+                    await notify
+                        .SendStockAlertAsync(
                             product.Name,
                             product
-                                .StockQuantity);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error(
-                            "Alert send failed "
-                            + "for "
-                            + product.Name,
-                            ex);
-                    }
-                }
-            }
-        }
+                                .StockQuantity,
+                            _threshold);
 
-        public void Dispose()
-        {
-            if (!_disposed)
-            {
-                _timer.Dispose();
-                _disposed = true;
+                    _log.LogWarning(
+                        "Low stock: {Name}"
+                        + " ({Qty} units)",
+                        product.Name,
+                        product
+                            .StockQuantity);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(
+                        ex,
+                        "Alert send failed"
+                        + " for {Name}",
+                        product.Name);
+                }
             }
         }
     }

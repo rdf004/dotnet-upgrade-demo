@@ -1,31 +1,29 @@
 using System;
 using System.Threading.Tasks;
-using System.Web;
 using ContosoCommerce.Core.Interfaces;
 using ContosoCommerce.Data;
 using ContosoCommerce.Data.Entities;
-using log4net;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace ContosoCommerce.Users.Services
 {
-    /// <summary>
-    /// Audit logging implementation. Captures
-    /// user identity and IP address from
-    /// HttpContext.Current (breaks in .NET 8
-    /// without IHttpContextAccessor).
-    /// </summary>
     public class AuditService : IAuditService
     {
-        private static readonly ILog Log =
-            LogManager.GetLogger(
-                typeof(AuditService));
-
+        private readonly ILogger<AuditService>
+            _log;
         private readonly CommerceDbContext _db;
+        private readonly IHttpContextAccessor
+            _httpCtx;
 
         public AuditService(
-            CommerceDbContext context)
+            CommerceDbContext context,
+            IHttpContextAccessor accessor,
+            ILogger<AuditService> logger)
         {
             _db = context;
+            _httpCtx = accessor;
+            _log = logger;
         }
 
         public async Task LogAsync(
@@ -38,11 +36,12 @@ namespace ContosoCommerce.Users.Services
             var ipAddress = "Unknown";
 
             var httpContext =
-                HttpContext.Current;
+                _httpCtx.HttpContext;
             if (httpContext != null)
             {
                 var userId =
-                    httpContext.Items["UserId"];
+                    httpContext
+                        .Items["UserId"];
                 if (userId != null)
                 {
                     performedBy =
@@ -51,15 +50,20 @@ namespace ContosoCommerce.Users.Services
 
                 try
                 {
-                    ipAddress = httpContext
-                        .Request
-                        .UserHostAddress;
+                    var remote = httpContext
+                        .Connection
+                        .RemoteIpAddress;
+                    if (remote != null)
+                    {
+                        ipAddress =
+                            remote.ToString();
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Log.Warn(
-                        "Could not get IP",
-                        ex);
+                    _log.LogWarning(
+                        ex,
+                        "Could not get IP");
                 }
             }
 
@@ -77,8 +81,9 @@ namespace ContosoCommerce.Users.Services
             _db.AuditLogs.Add(entry);
             await _db.SaveChangesAsync();
 
-            Log.InfoFormat(
-                "Audit: {0} {1} on {2}#{3}",
+            _log.LogInformation(
+                "Audit: {Action} {By}"
+                + " on {Type}#{Id}",
                 action, performedBy,
                 entityType, entityId);
         }
