@@ -93,7 +93,7 @@ namespace ContosoCommerce.Inventory.Services
             CreateProductAsync(
                 CreateProductRequest req)
         {
-            ValidateManagerRole();
+            await ValidateManagerRoleAsync();
 
             _log.LogInformation(
                 "Creating product: {Name}",
@@ -142,7 +142,7 @@ namespace ContosoCommerce.Inventory.Services
                 int productId,
                 UpdateProductRequest req)
         {
-            ValidateManagerRole();
+            await ValidateManagerRoleAsync();
 
             var product = await _db.Products
                 .FindAsync(productId);
@@ -202,7 +202,7 @@ namespace ContosoCommerce.Inventory.Services
         public async Task DeleteProductAsync(
             int productId)
         {
-            ValidateManagerRole();
+            await ValidateManagerRoleAsync();
 
             var product = await _db.Products
                 .FindAsync(productId);
@@ -260,7 +260,7 @@ namespace ContosoCommerce.Inventory.Services
             CreateCategoryAsync(
                 CreateCategoryRequest req)
         {
-            ValidateManagerRole();
+            await ValidateManagerRoleAsync();
 
             var cat = new Category
             {
@@ -361,7 +361,7 @@ namespace ContosoCommerce.Inventory.Services
         public async Task AdjustStockAsync(
             int productId, int newQuantity)
         {
-            ValidateManagerRole();
+            await ValidateManagerRoleAsync();
 
             var product = await _db.Products
                 .FindAsync(productId);
@@ -452,7 +452,8 @@ namespace ContosoCommerce.Inventory.Services
             }
         }
 
-        private void ValidateManagerRole()
+        private async Task
+            ValidateManagerRoleAsync()
         {
             var ctx =
                 _httpCtx.HttpContext;
@@ -463,12 +464,11 @@ namespace ContosoCommerce.Inventory.Services
             if (userIdObj == null) return;
 
             var userId = (int)userIdObj;
-            var hasRole = _users
+            var hasRole = await _users
                 .HasRoleAsync(
                     userId,
                     UserRole
-                        .InventoryManager)
-                .Result;
+                        .InventoryManager);
 
             if (!hasRole)
             {
